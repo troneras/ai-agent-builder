@@ -7,8 +7,10 @@ const corsHeaders = {
 }
 
 interface ChatMessage {
-  role: 'user' | 'assistant' | 'system'
+  role: 'user' | 'assistant' | 'system' | 'tool'
   content: string
+  tool_call_id?: string
+  name?: string
 }
 
 interface OnboardingData {
@@ -35,7 +37,7 @@ CRITICAL RULES:
 2. Always ask "Does this look correct?" or "Should I save this information?" before storing
 3. Only use store tools AFTER the user confirms the data is accurate
 4. If user says "no" or corrects information, update your understanding but don't store until they confirm
-5. Present web search results clearly and ask for confirmation before storing
+5. After using web_search_tool, ALWAYS generate a response presenting the findings and asking for confirmation
 
 CONVERSATION FLOW:
 1. Get user's name for personalization
@@ -47,10 +49,9 @@ CONVERSATION FLOW:
 7. Complete onboarding when all info is gathered and confirmed
 
 TOOL USAGE GUIDELINES:
-- Always show friendly descriptions when using tools
-- For web search: "🔍 Let me search for information about your business online..."
-- For storing data: "💾 Great! I'll save that information to your profile."
-- For completion: "✅ Perfect! Your phone assistant is ready to set up."
+- After web search: Present findings in a friendly way and ask for confirmation
+- For storing data: Confirm what was saved and continue the conversation
+- For completion: Celebrate and explain next steps
 
 AI USE CASE EXPLANATIONS:
 - **Appointment Scheduling**: "I can integrate with your Google Calendar to automatically find available slots and book appointments when customers call"
@@ -444,88 +445,88 @@ async function handleToolCall(toolCall: any, supabase: any, userId: string) {
       case 'store_user_name':
         updates.user_name = parsedArgs.user_name
         await updateUserProfile(supabase, userId, updates)
-        toolResult = `✅ Saved your name: ${parsedArgs.user_name}`
+        toolResult = `Stored user name: ${parsedArgs.user_name}`
         break
 
       case 'store_business_name':
         updates.business_name = parsedArgs.business_name
         await updateUserProfile(supabase, userId, updates)
-        toolResult = `✅ Saved business name: ${parsedArgs.business_name}`
+        toolResult = `Stored business name: ${parsedArgs.business_name}`
         break
 
       case 'store_business_type':
         updates.business_type = parsedArgs.business_type
         await updateUserProfile(supabase, userId, updates)
-        toolResult = `✅ Saved business type: ${parsedArgs.business_type}`
+        toolResult = `Stored business type: ${parsedArgs.business_type}`
         break
 
       case 'store_business_city':
         updates.business_city = parsedArgs.business_city
         await updateUserProfile(supabase, userId, updates)
-        toolResult = `✅ Saved business location: ${parsedArgs.business_city}`
+        toolResult = `Stored business location: ${parsedArgs.business_city}`
         break
 
       case 'store_business_address':
         updates.full_address = parsedArgs.full_address
         await updateUserProfile(supabase, userId, updates)
-        toolResult = `✅ Saved business address: ${parsedArgs.full_address}`
+        toolResult = `Stored business address: ${parsedArgs.full_address}`
         break
 
       case 'store_business_phone':
         updates.phone_number = parsedArgs.phone_number
         await updateUserProfile(supabase, userId, updates)
-        toolResult = `✅ Saved phone number: ${parsedArgs.phone_number}`
+        toolResult = `Stored phone number: ${parsedArgs.phone_number}`
         break
 
       case 'store_business_email':
         updates.contact_email = parsedArgs.contact_email
         await updateUserProfile(supabase, userId, updates)
-        toolResult = `✅ Saved email address: ${parsedArgs.contact_email}`
+        toolResult = `Stored email address: ${parsedArgs.contact_email}`
         break
 
       case 'store_business_hours':
         updates.opening_hours = parsedArgs.opening_hours
         await updateUserProfile(supabase, userId, updates)
-        toolResult = `✅ Saved business hours: ${parsedArgs.opening_hours}`
+        toolResult = `Stored business hours: ${parsedArgs.opening_hours}`
         break
 
       case 'store_business_services':
         updates.services = parsedArgs.services
         await updateUserProfile(supabase, userId, updates)
-        toolResult = `✅ Saved services: ${parsedArgs.services.join(', ')}`
+        toolResult = `Stored services: ${parsedArgs.services.join(', ')}`
         break
 
       case 'store_business_website':
         updates.website = parsedArgs.website
         await updateUserProfile(supabase, userId, updates)
-        toolResult = `✅ Saved website: ${parsedArgs.website}`
+        toolResult = `Stored website: ${parsedArgs.website}`
         break
 
       case 'store_ai_use_cases':
         updates.ai_use_cases = parsedArgs.ai_use_cases
         await updateUserProfile(supabase, userId, updates)
-        toolResult = `✅ Saved AI preferences: ${parsedArgs.ai_use_cases.join(', ')}`
+        toolResult = `Stored AI preferences: ${parsedArgs.ai_use_cases.join(', ')}`
         break
 
       case 'web_search_tool':
         const searchQuery = `Find detailed information about "${parsedArgs.business_name}" ${parsedArgs.business_type} business in ${parsedArgs.city}. Include: full address, phone number, email, website, operating hours, and services offered.`
         const searchResults = await callSearchModel(searchQuery)
-        toolResult = `🔍 **Found information about ${parsedArgs.business_name}:**\n\n${searchResults}\n\n*Please review this information and let me know if it's accurate before I save it to your profile.*`
+        toolResult = `Found business information: ${searchResults}`
         break
 
       case 'complete_onboarding':
         const currentData = await getCurrentProfileData(supabase, userId)
         const finalData = { ...currentData, onboarding_completed: true }
         await completeUserOnboarding(supabase, userId, finalData)
-        toolResult = `🎉 **Setup Complete!**\n\n${parsedArgs.summary}\n\nYour AI phone assistant is now ready to be configured!`
+        toolResult = `Onboarding completed successfully. Summary: ${parsedArgs.summary}`
         break
 
       default:
-        toolResult = `❌ Unknown tool: ${name}`
+        toolResult = `Unknown tool: ${name}`
     }
   } catch (error) {
     console.error(`Tool execution error for ${name}:`, error)
-    toolResult = `❌ Error executing ${name}: ${error.message}`
+    toolResult = `Error executing ${name}: ${error.message}`
   }
 
   return toolResult
@@ -616,6 +617,7 @@ Deno.serve(async (req: Request) => {
             try {
               let buffer = ''
               let currentToolCalls: any[] = []
+              let conversationMessages = [...messages]
 
               while (true) {
                 const { done, value } = await reader.read()
@@ -660,10 +662,12 @@ Deno.serve(async (req: Request) => {
 
                       // Check if tool calls are complete
                       if (parsed.choices?.[0]?.finish_reason === 'tool_calls' && currentToolCalls.length > 0) {
-                        // Execute tool calls
+                        // Execute tool calls and add to conversation
+                        const toolMessages: ChatMessage[] = []
+                        
                         for (const toolCall of currentToolCalls) {
                           if (toolCall.function.name && toolCall.function.arguments) {
-                            // Send tool start notification
+                            // Send tool start notification to frontend
                             const toolStartChunk = `data: ${JSON.stringify({ 
                               tool_name: toolCall.function.name 
                             })}\n\n`
@@ -671,21 +675,72 @@ Deno.serve(async (req: Request) => {
 
                             const toolResult = await handleToolCall(toolCall, supabase, userId)
 
-                            // Send tool result to client
+                            // Add tool result to conversation
+                            toolMessages.push({
+                              role: 'tool',
+                              content: toolResult,
+                              tool_call_id: toolCall.id,
+                              name: toolCall.function.name
+                            })
+
+                            // Send tool completion notification to frontend
                             const toolChunk = `data: ${JSON.stringify({ 
-                              tool_result: toolResult,
+                              tool_result: `✅ ${toolCall.function.name} completed`,
                               tool_name: toolCall.function.name 
                             })}\n\n`
                             controller.enqueue(new TextEncoder().encode(toolChunk))
-
-                            // Update conversation history with tool result
-                            const updatedMessages = [
-                              ...messages,
-                              { role: 'assistant', content: `Tool executed: ${toolCall.function.name}` }
-                            ]
-                            await saveConversationHistory(supabase, userId, threadId, updatedMessages)
                           }
                         }
+
+                        // Add assistant message with tool calls and tool results to conversation
+                        conversationMessages.push({
+                          role: 'assistant',
+                          content: '', // Tool calls don't have content
+                        })
+                        conversationMessages.push(...toolMessages)
+
+                        // Now call OpenAI again to get the assistant's response to the tool results
+                        const followUpMessages: ChatMessage[] = [
+                          { role: 'system', content: SYSTEM_PROMPT },
+                          ...conversationMessages
+                        ]
+
+                        const followUpResponse = await callOpenAI(followUpMessages, true)
+                        const followUpReader = followUpResponse.body?.getReader()
+
+                        if (followUpReader) {
+                          let followUpBuffer = ''
+                          
+                          while (true) {
+                            const { done: followUpDone, value: followUpValue } = await followUpReader.read()
+                            if (followUpDone) break
+
+                            followUpBuffer += decoder.decode(followUpValue, { stream: true })
+                            const followUpLines = followUpBuffer.split('\n')
+                            followUpBuffer = followUpLines.pop() || ''
+
+                            for (const followUpLine of followUpLines) {
+                              if (followUpLine.startsWith('data: ')) {
+                                const followUpData = followUpLine.slice(6)
+                                if (followUpData === '[DONE]') continue
+
+                                try {
+                                  const followUpParsed = JSON.parse(followUpData)
+                                  const followUpDelta = followUpParsed.choices?.[0]?.delta
+
+                                  if (followUpDelta?.content) {
+                                    // Stream the assistant's response to tool results
+                                    const chunk = `data: ${JSON.stringify({ content: followUpDelta.content })}\n\n`
+                                    controller.enqueue(new TextEncoder().encode(chunk))
+                                  }
+                                } catch (parseError) {
+                                  console.error('Follow-up parse error:', parseError)
+                                }
+                              }
+                            }
+                          }
+                        }
+
                         currentToolCalls = []
                       }
                     } catch (parseError) {
