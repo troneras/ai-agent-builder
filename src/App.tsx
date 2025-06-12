@@ -20,6 +20,15 @@ function App() {
   const { user, loading } = useAuth();
   const { profile, loading: profileLoading } = useUserProfile(user);
 
+  // Auto-show onboarding if user is logged in but hasn't completed onboarding
+  useEffect(() => {
+    if (user && profile && !profileLoading) {
+      if (!profile.onboarding_completed) {
+        setShowOnboarding(true);
+      }
+    }
+  }, [user, profile, profileLoading]);
+
   const handleStartBuilding = () => {
     if (user) {
       // Check if onboarding is completed
@@ -43,8 +52,8 @@ function App() {
 
   const handleAuthComplete = () => {
     setShowAuth(false);
-    // Don't automatically show onboarding - let the user click "Get Started" again
-    // This gives them a chance to see they're logged in
+    // Don't automatically show onboarding here - the useEffect will handle it
+    // This gives the profile time to load and the useEffect will trigger onboarding
   };
 
   const handleAuthClose = () => {
