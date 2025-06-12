@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Send, User, ExternalLink } from 'lucide-react';
+import { useUserProfile } from '../hooks/useUserProfile';
+import { useAuth } from '../hooks/useAuth';
+import { OnboardingData } from '../types/user';
 import Logo from './Logo';
 
 interface OnboardingChatProps {
@@ -13,20 +16,15 @@ interface Message {
   id: string;
 }
 
-interface BusinessData {
-  businessName?: string;
-  businessType?: string;
-  services?: string[];
-  hours?: string;
-  phoneStyle?: string;
-}
-
 const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
+  const { user } = useAuth();
+  const { profile, updateOnboardingStep, completeOnboarding } = useUserProfile(user);
+  
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentInput, setCurrentInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
-  const [businessData, setBusinessData] = useState<BusinessData>({});
+  const [businessData, setBusinessData] = useState<OnboardingData>({});
   const [progress, setProgress] = useState(0);
   const [showPhoneNumber, setShowPhoneNumber] = useState(false);
   const [phoneNumber] = useState(`(555) ${Math.floor(Math.random() * 900) + 100}-${Math.floor(Math.random() * 9000) + 1000}`);
@@ -44,9 +42,42 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
   }, [messages]);
 
   useEffect(() => {
+    // Initialize from existing profile data if available
+    if (profile?.onboarding_data) {
+      setBusinessData(profile.onboarding_data);
+      setCurrentStep(profile.onboarding_step || 0);
+      setProgress((profile.onboarding_step || 0) / 5 * 100);
+    }
+
     // Start the conversation
-    addBotMessage("👋 Hi! I'm excited to help you set up your phone assistant. Let's start simple - what's your business name?");
-  }, []);
+    if (profile?.onboarding_step === 0 || !profile?.onboarding_step) {
+      addBotMessage("👋 Hi! I'm excited to help you set up your phone assistant. Let's start simple - what's your business name?");
+    } else {
+      // Resume from where they left off
+      resumeOnboarding();
+    }
+  }, [profile]);
+
+  const resumeOnboarding = () => {
+    const step = profile?.onboarding_step || 0;
+    addBotMessage(`Welcome back! Let's continue setting up your phone assistant. We were on step ${step + 1}.`);
+    
+    // Add appropriate message based on current step
+    switch (step) {
+      case 1:
+        addBotMessage(`I see your business is "${businessData.businessName}". What type of business is it?`);
+        break;
+      case 2:
+        addBotMessage("What are your main services that customers call about?");
+        break;
+      case 3:
+        addBotMessage("What are your business hours?");
+        break;
+      case 4:
+        addBotMessage("How do you like to talk to customers? Friendly and casual, or more professional?");
+        break;
+    }
+  };
 
   const generateMessageId = () => {
     const id = `msg-${messageIdCounter}`;
@@ -59,7 +90,6 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
     setTimeout(() => {
       const messageId = generateMessageId();
       setMessages(prev => {
-        // Check if message already exists to prevent duplicates
         const messageExists = prev.some(msg => msg.id === messageId);
         if (messageExists) return prev;
         return [...prev, { type: 'bot', content, timestamp: new Date(), id: messageId }];
@@ -71,15 +101,16 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
   const addUserMessage = (content: string) => {
     const messageId = generateMessageId();
     setMessages(prev => {
-      // Check if message already exists to prevent duplicates
       const messageExists = prev.some(msg => msg.id === messageId);
       if (messageExists) return prev;
       return [...prev, { type: 'user', content, timestamp: new Date(), id: messageId }];
     });
   };
 
-  const updateProgress = (step: number) => {
+  const updateProgress = async (step: number) => {
     setProgress((step / 5) * 100);
+    // Save progress to database
+    await updateOnboardingStep(step, businessData);
   };
 
   const handleSendMessage = async () => {
@@ -96,16 +127,18 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
   const processStep = async (userMessage: string) => {
     switch (currentStep) {
       case 0: // Business name
-        setBusinessData(prev => ({ ...prev, businessName: userMessage }));
+        const newData1 = { ...businessData, businessName: userMessage };
+        setBusinessData(newData1);
         setCurrentStep(1);
-        updateProgress(1);
+        await updateProgress(1);
         addBotMessage(`Great! Now, what type of business is ${userMessage}? For example: plumbing, hair salon, restaurant, auto repair, etc.`, 800);
         break;
 
       case 1: // Business type
-        setBusinessData(prev => ({ ...prev, businessType: userMessage }));
+        const newData2 = { ...businessData, businessType: userMessage };
+        setBusinessData(newData2);
         setCurrentStep(2);
-        updateProgress(2);
+        await updateProgress(2);
         addBotMessage("Perfect! What are your main services that customers call about?", 500);
         setTimeout(() => {
           addBotMessage(
@@ -149,19 +182,21 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
         break;
 
       case 3: // Business hours
-        setBusinessData(prev => ({ ...prev, hours: userMessage }));
+        const newData4 = { ...businessData, hours: userMessage };
+        setBusinessData(newData4);
         setCurrentStep(4);
-        updateProgress(4);
+        await updateProgress(4);
         addBotMessage("Got it! One last thing - how do you like to talk to customers? Friendly and casual, or more professional?", 800);
         break;
 
       case 4: // Phone style
-        setBusinessData(prev => ({ ...prev, phoneStyle: userMessage }));
+        const finalData = { ...businessData, phoneStyle: userMessage, phoneNumber };
+        setBusinessData(finalData);
         setCurrentStep(5);
-        updateProgress(5);
+        await updateProgress(5);
         addBotMessage("Perfect! Now I'm setting up your phone assistant with everything you told me...", 800);
         setTimeout(() => {
-          createPhoneAssistant();
+          createPhoneAssistant(finalData);
         }, 1500);
         break;
 
@@ -174,19 +209,20 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
     }
   };
 
-  const handleServiceSelection = (service: string) => {
+  const handleServiceSelection = async (service: string) => {
     addUserMessage(service);
-    setBusinessData(prev => ({
-      ...prev,
-      services: [...(prev.services || []), service]
-    }));
+    const newData = {
+      ...businessData,
+      services: [...(businessData.services || []), service]
+    };
+    setBusinessData(newData);
     setCurrentStep(3);
-    updateProgress(3);
+    await updateProgress(3);
     
     addBotMessage(`Excellent! Your assistant will handle ${service.toLowerCase()}. What are your business hours? (Like "Monday-Friday 9am-5pm" or "24/7 for emergencies")`, 800);
   };
 
-  const createPhoneAssistant = () => {
+  const createPhoneAssistant = async (finalData: OnboardingData) => {
     addBotMessage(
       <div className="space-y-3">
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -198,11 +234,11 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
             </div>
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 bg-green-500 rounded-full" aria-hidden="true"></div>
-              <span>Teaching about {businessData.businessType} services</span>
+              <span>Teaching about {finalData.businessType} services</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 bg-green-500 rounded-full" aria-hidden="true"></div>
-              <span>Programming {businessData.phoneStyle} conversation style</span>
+              <span>Programming {finalData.phoneStyle} conversation style</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" aria-hidden="true"></div>
@@ -214,8 +250,12 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
       800
     );
 
-    setTimeout(() => {
+    setTimeout(async () => {
       setShowPhoneNumber(true);
+      
+      // Complete onboarding in database
+      await completeOnboarding(finalData);
+      
       addBotMessage(
         <div className="bg-green-50 border border-green-200 rounded-lg p-4">
           <h4 className="font-semibold text-green-800 mb-2">📞 Your New Phone Number</h4>

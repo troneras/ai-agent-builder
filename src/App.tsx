@@ -10,6 +10,7 @@ import AuthForm from './components/AuthForm';
 import OnboardingChat from './components/OnboardingChat';
 import ParticleBackground from './components/ParticleBackground';
 import { useAuth } from './hooks/useAuth';
+import { useUserProfile } from './hooks/useUserProfile';
 import { authHelpers } from './lib/supabase';
 
 function App() {
@@ -17,10 +18,18 @@ function App() {
   const [authMode, setAuthMode] = useState<'register' | 'login' | 'forgot-password'>('register');
   const [showOnboarding, setShowOnboarding] = useState(false);
   const { user, loading } = useAuth();
+  const { profile, loading: profileLoading } = useUserProfile(user);
 
   const handleStartBuilding = () => {
     if (user) {
-      setShowOnboarding(true);
+      // Check if onboarding is completed
+      if (profile?.onboarding_completed) {
+        // Redirect to dashboard (for now just show a message)
+        alert('Dashboard coming soon! Your phone assistant is ready to use.');
+      } else {
+        // Show onboarding
+        setShowOnboarding(true);
+      }
     } else {
       setAuthMode('register');
       setShowAuth(true);
@@ -34,7 +43,8 @@ function App() {
 
   const handleAuthComplete = () => {
     setShowAuth(false);
-    setShowOnboarding(true);
+    // Don't automatically show onboarding - let the user click "Get Started" again
+    // This gives them a chance to see they're logged in
   };
 
   const handleAuthClose = () => {
@@ -50,8 +60,8 @@ function App() {
     setShowOnboarding(false);
   };
 
-  // Show loading state while checking authentication
-  if (loading) {
+  // Show loading state while checking authentication and profile
+  if (loading || (user && profileLoading)) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center">
         <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin"></div>

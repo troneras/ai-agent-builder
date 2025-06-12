@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, X, LogIn, User, LogOut } from 'lucide-react';
+import { Menu, X, LogIn, User, LogOut, Crown, Clock } from 'lucide-react';
 import { User as SupabaseUser } from '@supabase/supabase-js';
+import { useUserProfile } from '../hooks/useUserProfile';
 import Logo from './Logo';
 
 interface HeaderProps {
@@ -11,6 +12,7 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ onStartBuilding, onShowAuth, user, onSignOut }) => {
+  const { profile } = useUserProfile(user);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('');
@@ -67,6 +69,41 @@ const Header: React.FC<HeaderProps> = ({ onStartBuilding, onShowAuth, user, onSi
 
   const getUserInitials = (email: string) => {
     return email.charAt(0).toUpperCase();
+  };
+
+  const getSubscriptionBadge = () => {
+    if (!profile) return null;
+
+    const { subscription_status, subscription_plan, trial_ends_at } = profile;
+    
+    if (subscription_status === 'trial') {
+      const trialEnd = trial_ends_at ? new Date(trial_ends_at) : null;
+      const daysLeft = trialEnd ? Math.ceil((trialEnd.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) : 0;
+      
+      return (
+        <div className="flex items-center gap-1 bg-orange-100 text-orange-700 px-2 py-1 rounded-full text-xs font-medium">
+          <Clock className="w-3 h-3" />
+          {daysLeft > 0 ? `${daysLeft} days left` : 'Trial expired'}
+        </div>
+      );
+    }
+
+    if (subscription_status === 'active') {
+      const planColors = {
+        starter: 'bg-blue-100 text-blue-700',
+        professional: 'bg-purple-100 text-purple-700',
+        enterprise: 'bg-green-100 text-green-700'
+      };
+
+      return (
+        <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${planColors[subscription_plan]}`}>
+          <Crown className="w-3 h-3" />
+          {subscription_plan.charAt(0).toUpperCase() + subscription_plan.slice(1)}
+        </div>
+      );
+    }
+
+    return null;
   };
 
   return (
@@ -137,11 +174,29 @@ const Header: React.FC<HeaderProps> = ({ onStartBuilding, onShowAuth, user, onSi
                   }`}>
                     {getUserInitials(user.email || '')}
                   </div>
-                  <span className="hidden xl:block">{user.email}</span>
+                  <div className="hidden xl:block">
+                    <div className="text-sm">{user.email}</div>
+                    {getSubscriptionBadge()}
+                  </div>
                 </button>
 
                 {showUserMenu && (
-                  <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-50">
+                  <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-50">
+                    {/* User Info */}
+                    <div className="px-4 py-3 border-b border-gray-100">
+                      <div className="text-sm font-medium text-gray-900">{user.email}</div>
+                      {profile && (
+                        <div className="flex items-center justify-between mt-2">
+                          {getSubscriptionBadge()}
+                          {!profile.onboarding_completed && (
+                            <div className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded">
+                              Setup incomplete
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
                     <button
                       onClick={() => {
                         onStartBuilding();
@@ -150,9 +205,11 @@ const Header: React.FC<HeaderProps> = ({ onStartBuilding, onShowAuth, user, onSi
                       className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2"
                     >
                       <User className="w-4 h-4" />
-                      Dashboard
+                      {profile?.onboarding_completed ? 'Dashboard' : 'Complete Setup'}
                     </button>
+                    
                     <hr className="my-2 border-gray-100" />
+                    
                     <button
                       onClick={() => {
                         onSignOut();
@@ -253,7 +310,10 @@ const Header: React.FC<HeaderProps> = ({ onStartBuilding, onShowAuth, user, onSi
                       <div className="w-8 h-8 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center font-semibold">
                         {getUserInitials(user.email || '')}
                       </div>
-                      <span className="text-sm">{user.email}</span>
+                      <div className="flex-1">
+                        <div className="text-sm">{user.email}</div>
+                        {getSubscriptionBadge()}
+                      </div>
                     </div>
                     
                     <button
@@ -264,7 +324,7 @@ const Header: React.FC<HeaderProps> = ({ onStartBuilding, onShowAuth, user, onSi
                       className="w-full text-left text-gray-700 hover:text-purple-600 font-medium py-2 transition-colors focus:outline-none flex items-center gap-2"
                     >
                       <User className="w-4 h-4" />
-                      Dashboard
+                      {profile?.onboarding_completed ? 'Dashboard' : 'Complete Setup'}
                     </button>
                     
                     <button
