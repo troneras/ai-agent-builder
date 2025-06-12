@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import HeroSection from './components/HeroSection';
 import FeaturesSection from './components/FeaturesSection';
@@ -6,19 +6,38 @@ import HowItWorksSection from './components/HowItWorksSection';
 import TestimonialsSection from './components/TestimonialsSection';
 import PricingSection from './components/PricingSection';
 import Footer from './components/Footer';
-import RegistrationForm from './components/RegistrationForm';
+import AuthForm from './components/AuthForm';
+import AuthCallback from './components/AuthCallback';
 import OnboardingChat from './components/OnboardingChat';
 import ParticleBackground from './components/ParticleBackground';
+import { useAuth } from './hooks/useAuth';
+import { authHelpers } from './lib/supabase';
 
 function App() {
   const [showAuth, setShowAuth] = useState(false);
-  const [authMode, setAuthMode] = useState<'register' | 'login'>('register');
+  const [authMode, setAuthMode] = useState<'register' | 'login' | 'forgot-password'>('register');
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [user, setUser] = useState<{ email: string; password: string } | null>(null);
+  const [showAuthCallback, setShowAuthCallback] = useState(false);
+  const { user, loading } = useAuth();
+
+  // Check for auth callback on mount
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const accessToken = urlParams.get('access_token');
+    const type = urlParams.get('type');
+    
+    if (accessToken || type === 'recovery') {
+      setShowAuthCallback(true);
+    }
+  }, []);
 
   const handleStartBuilding = () => {
-    setAuthMode('register');
-    setShowAuth(true);
+    if (user) {
+      setShowOnboarding(true);
+    } else {
+      setAuthMode('register');
+      setShowAuth(true);
+    }
   };
 
   const handleShowAuth = (mode: 'register' | 'login') => {
@@ -26,9 +45,9 @@ function App() {
     setShowAuth(true);
   };
 
-  const handleAuthComplete = (userData: { email: string; password: string }) => {
-    setUser(userData);
+  const handleAuthComplete = () => {
     setShowAuth(false);
+    setShowAuthCallback(false);
     setShowOnboarding(true);
   };
 
@@ -40,11 +59,30 @@ function App() {
     setShowOnboarding(false);
   };
 
+  const handleSignOut = async () => {
+    await authHelpers.signOut();
+    setShowOnboarding(false);
+  };
+
+  // Show loading state while checking authentication
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative">
       <ParticleBackground />
       
-      <Header onStartBuilding={handleStartBuilding} onShowAuth={handleShowAuth} />
+      <Header 
+        onStartBuilding={handleStartBuilding} 
+        onShowAuth={handleShowAuth}
+        user={user}
+        onSignOut={handleSignOut}
+      />
       
       <main className="relative z-10">
         <HeroSection onStartBuilding={handleStartBuilding} />
@@ -56,12 +94,15 @@ function App() {
 
       <Footer />
 
+      {showAuthCallback && (
+        <AuthCallback onComplete={handleAuthComplete} />
+      )}
+
       {showAuth && (
-        <RegistrationForm 
+        <AuthForm 
           onClose={handleAuthClose}
           onComplete={handleAuthComplete}
-          mode={authMode}
-          onSwitchMode={setAuthMode}
+          initialMode={authMode}
         />
       )}
 
