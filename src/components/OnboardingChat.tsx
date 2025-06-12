@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Send, User, ExternalLink } from 'lucide-react';
+import { X, Send, User, ExternalLink, Bot, Search, Save, CheckCircle } from 'lucide-react';
 import { useUserProfile } from '../hooks/useUserProfile';
 import { useAuth } from '../hooks/useAuth';
-import { OnboardingData } from '../types/user';
 import Logo from './Logo';
 
 interface OnboardingChatProps {
@@ -10,28 +9,28 @@ interface OnboardingChatProps {
 }
 
 interface Message {
-  type: 'user' | 'bot';
+  type: 'user' | 'assistant' | 'system' | 'tool';
   content: string | React.ReactNode;
   timestamp: Date;
   id: string;
+  toolName?: string;
 }
 
 const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
   const { user } = useAuth();
-  const { profile, updateOnboardingStep, completeOnboarding } = useUserProfile(user);
+  const { profile, refetch } = useUserProfile(user);
   
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentInput, setCurrentInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [currentStep, setCurrentStep] = useState(0);
-  const [businessData, setBusinessData] = useState<OnboardingData>({});
-  const [progress, setProgress] = useState(0);
-  const [showPhoneNumber, setShowPhoneNumber] = useState(false);
-  const [phoneNumber] = useState(`(555) ${Math.floor(Math.random() * 900) + 100}-${Math.floor(Math.random() * 9000) + 1000}`);
+  const [isConnected, setIsConnected] = useState(false);
   const [messageIdCounter, setMessageIdCounter] = useState(0);
+  const [isToolExecuting, setIsToolExecuting] = useState(false);
+  const [currentToolName, setCurrentToolName] = useState<string>('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -42,42 +41,9 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
   }, [messages]);
 
   useEffect(() => {
-    // Initialize from existing profile data if available
-    if (profile?.onboarding_data) {
-      setBusinessData(profile.onboarding_data);
-      setCurrentStep(profile.onboarding_step || 0);
-      setProgress((profile.onboarding_step || 0) / 5 * 100);
-    }
-
-    // Start the conversation
-    if (profile?.onboarding_step === 0 || !profile?.onboarding_step) {
-      addBotMessage("👋 Hi! I'm excited to help you set up your phone assistant. Let's start simple - what's your business name?");
-    } else {
-      // Resume from where they left off
-      resumeOnboarding();
-    }
-  }, [profile]);
-
-  const resumeOnboarding = () => {
-    const step = profile?.onboarding_step || 0;
-    addBotMessage(`Welcome back! Let's continue setting up your phone assistant. We were on step ${step + 1}.`);
-    
-    // Add appropriate message based on current step
-    switch (step) {
-      case 1:
-        addBotMessage(`I see your business is "${businessData.businessName}". What type of business is it?`);
-        break;
-      case 2:
-        addBotMessage("What are your main services that customers call about?");
-        break;
-      case 3:
-        addBotMessage("What are your business hours?");
-        break;
-      case 4:
-        addBotMessage("How do you like to talk to customers? Friendly and casual, or more professional?");
-        break;
-    }
-  };
+    // Start with a welcome message
+    addAssistantMessage("👋 Hi! I'm your Cutcall setup assistant. I'm here to help you get your AI phone assistant ready for your business. Let's start with something simple - what's your name?");
+  }, []);
 
   const generateMessageId = () => {
     const id = `msg-${messageIdCounter}`;
@@ -85,230 +51,222 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
     return id;
   };
 
-  const addBotMessage = (content: string | React.ReactNode, delay: number = 1000) => {
-    setIsTyping(true);
-    setTimeout(() => {
-      const messageId = generateMessageId();
-      setMessages(prev => {
-        const messageExists = prev.some(msg => msg.id === messageId);
-        if (messageExists) return prev;
-        return [...prev, { type: 'bot', content, timestamp: new Date(), id: messageId }];
-      });
-      setIsTyping(false);
-    }, delay);
-  };
-
-  const addUserMessage = (content: string) => {
+  const addMessage = (type: Message['type'], content: string | React.ReactNode, toolName?: string) => {
     const messageId = generateMessageId();
     setMessages(prev => {
       const messageExists = prev.some(msg => msg.id === messageId);
       if (messageExists) return prev;
-      return [...prev, { type: 'user', content, timestamp: new Date(), id: messageId }];
+      return [...prev, { type, content, timestamp: new Date(), id: messageId, toolName }];
     });
   };
 
-  const updateProgress = async (step: number) => {
-    setProgress((step / 5) * 100);
-    // Save progress to database
-    await updateOnboardingStep(step, businessData);
+  const addUserMessage = (content: string) => {
+    addMessage('user', content);
+  };
+
+  const addAssistantMessage = (content: string | React.ReactNode) => {
+    addMessage('assistant', content);
+  };
+
+  const addToolMessage = (content: string, toolName: string) => {
+    addMessage('tool', content, toolName);
+  };
+
+  const getToolIcon = (toolName: string) => {
+    if (toolName === 'web_search_tool') return <Search className="w-4 h-4" />;
+    if (toolName.startsWith('store_')) return <Save className="w-4 h-4" />;
+    if (toolName === 'complete_onboarding') return <CheckCircle className="w-4 h-4" />;
+    return <Bot className="w-4 h-4" />;
+  };
+
+  const getToolDescription = (toolName: string) => {
+    switch (toolName) {
+      case 'web_search_tool':
+        return 'Searching for your business information online...';
+      case 'store_user_name':
+        return 'Saving your name to your profile...';
+      case 'store_business_name':
+        return 'Saving your business name...';
+      case 'store_business_type':
+        return 'Saving your business type...';
+      case 'store_business_city':
+        return 'Saving your business location...';
+      case 'store_business_address':
+        return 'Saving your business address...';
+      case 'store_business_phone':
+        return 'Saving your phone number...';
+      case 'store_business_email':
+        return 'Saving your email address...';
+      case 'store_business_hours':
+        return 'Saving your business hours...';
+      case 'store_business_services':
+        return 'Saving your services list...';
+      case 'store_business_website':
+        return 'Saving your website information...';
+      case 'store_ai_use_cases':
+        return 'Saving your AI preferences...';
+      case 'complete_onboarding':
+        return 'Completing your setup...';
+      default:
+        return 'Processing...';
+    }
   };
 
   const handleSendMessage = async () => {
-    if (!currentInput.trim()) return;
+    if (!currentInput.trim() || isTyping || !user) return;
 
     const userMessage = currentInput.trim();
     addUserMessage(userMessage);
     setCurrentInput('');
+    setIsTyping(true);
 
-    // Process based on current step
-    await processStep(userMessage);
-  };
+    try {
+      // Abort any existing request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
 
-  const processStep = async (userMessage: string) => {
-    switch (currentStep) {
-      case 0: // Business name
-        const newData1 = { ...businessData, businessName: userMessage };
-        setBusinessData(newData1);
-        setCurrentStep(1);
-        await updateProgress(1);
-        addBotMessage(`Great! Now, what type of business is ${userMessage}? For example: plumbing, hair salon, restaurant, auto repair, etc.`, 800);
-        break;
+      abortControllerRef.current = new AbortController();
 
-      case 1: // Business type
-        const newData2 = { ...businessData, businessType: userMessage };
-        setBusinessData(newData2);
-        setCurrentStep(2);
-        await updateProgress(2);
-        addBotMessage("Perfect! What are your main services that customers call about?", 500);
-        setTimeout(() => {
-          addBotMessage(
-            <div className="space-y-2">
-              <p className="mb-3">Here are some common ones for your business type:</p>
-              <button 
-                onClick={() => handleServiceSelection('Appointments & Scheduling')}
-                className="block w-full text-left bg-blue-100 hover:bg-blue-200 text-blue-800 px-4 py-2 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
-                aria-label="Select appointments and scheduling service"
-              >
-                📅 Appointments & Scheduling
-              </button>
-              <button 
-                onClick={() => handleServiceSelection('Service Information & Pricing')}
-                className="block w-full text-left bg-green-100 hover:bg-green-200 text-green-800 px-4 py-2 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-green-500"
-                aria-label="Select service information and pricing"
-              >
-                💰 Service Information & Pricing
-              </button>
-              <button 
-                onClick={() => handleServiceSelection('Emergency Calls')}
-                className="block w-full text-left bg-red-100 hover:bg-red-200 text-red-800 px-4 py-2 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-red-500"
-                aria-label="Select emergency calls service"
-              >
-                🚨 Emergency Calls
-              </button>
-              <button 
-                onClick={() => handleServiceSelection('General Questions')}
-                className="block w-full text-left bg-purple-100 hover:bg-purple-200 text-purple-800 px-4 py-2 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500"
-                aria-label="Select general questions service"
-              >
-                ❓ General Questions
-              </button>
-            </div>,
-            800
-          );
-        }, 1000);
-        break;
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/onboarding-chat`;
+      
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [
+            ...messages.filter(m => m.type === 'user' || m.type === 'assistant').map(m => ({
+              role: m.type === 'user' ? 'user' : 'assistant',
+              content: typeof m.content === 'string' ? m.content : ''
+            })),
+            { role: 'user', content: userMessage }
+          ],
+          userId: user.id
+        }),
+        signal: abortControllerRef.current.signal
+      });
 
-      case 2: // Services handled by buttons
-        break;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
-      case 3: // Business hours
-        const newData4 = { ...businessData, hours: userMessage };
-        setBusinessData(newData4);
-        setCurrentStep(4);
-        await updateProgress(4);
-        addBotMessage("Got it! One last thing - how do you like to talk to customers? Friendly and casual, or more professional?", 800);
-        break;
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
 
-      case 4: // Phone style
-        const finalData = { ...businessData, phoneStyle: userMessage, phoneNumber };
-        setBusinessData(finalData);
-        setCurrentStep(5);
-        await updateProgress(5);
-        addBotMessage("Perfect! Now I'm setting up your phone assistant with everything you told me...", 800);
-        setTimeout(() => {
-          createPhoneAssistant(finalData);
-        }, 1500);
-        break;
+      if (!reader) {
+        throw new Error('No response body');
+      }
 
-      case 5: // Final step
-        addBotMessage("🎉 Your phone assistant is ready! You can start using it right away.", 800);
-        setTimeout(() => {
-          showFinalInstructions();
-        }, 1500);
-        break;
+      let assistantMessage = '';
+      let currentMessageId = generateMessageId();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              if (data.content) {
+                // Stream assistant message content
+                assistantMessage += data.content;
+                
+                // Update the current message
+                setMessages(prev => {
+                  const newMessages = [...prev];
+                  const existingIndex = newMessages.findIndex(m => m.id === currentMessageId);
+                  
+                  if (existingIndex >= 0) {
+                    newMessages[existingIndex] = {
+                      ...newMessages[existingIndex],
+                      content: assistantMessage
+                    };
+                  } else {
+                    newMessages.push({
+                      type: 'assistant',
+                      content: assistantMessage,
+                      timestamp: new Date(),
+                      id: currentMessageId
+                    });
+                  }
+                  
+                  return newMessages;
+                });
+              } else if (data.tool_result && data.tool_name) {
+                // Handle tool execution result
+                setIsToolExecuting(false);
+                setCurrentToolName('');
+                addToolMessage(data.tool_result, data.tool_name);
+                
+                // Refresh profile data after tool execution
+                if (data.tool_name.startsWith('store_') || data.tool_name === 'complete_onboarding') {
+                  refetch();
+                }
+                
+                // If onboarding is complete, show completion UI
+                if (data.tool_name === 'complete_onboarding') {
+                  setTimeout(() => {
+                    addAssistantMessage(
+                      <div className="space-y-4">
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                          <h4 className="font-semibold text-green-800 mb-2">🎉 Setup Complete!</h4>
+                          <p className="text-sm text-green-700">
+                            Your AI phone assistant is now configured and ready to help your business!
+                          </p>
+                        </div>
+                        
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => window.open('#', '_blank')}
+                            className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                            aria-label="View dashboard in new tab"
+                          >
+                            View Dashboard <ExternalLink className="w-4 h-4" aria-hidden="true" />
+                          </button>
+                          <button 
+                            onClick={onClose}
+                            className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500"
+                            aria-label="Close setup dialog"
+                          >
+                            Close
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }, 1000);
+                }
+              } else if (data.error) {
+                console.error('Stream error:', data.error);
+                addAssistantMessage(`❌ Sorry, I encountered an error: ${data.error}`);
+              }
+            } catch (parseError) {
+              console.error('Parse error:', parseError);
+            }
+          }
+        }
+      }
+
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.log('Request aborted');
+        return;
+      }
+      
+      console.error('Chat error:', error);
+      addAssistantMessage('❌ Sorry, I encountered an error. Please try again.');
+    } finally {
+      setIsTyping(false);
+      setIsToolExecuting(false);
+      setCurrentToolName('');
     }
-  };
-
-  const handleServiceSelection = async (service: string) => {
-    addUserMessage(service);
-    const newData = {
-      ...businessData,
-      services: [...(businessData.services || []), service]
-    };
-    setBusinessData(newData);
-    setCurrentStep(3);
-    await updateProgress(3);
-    
-    addBotMessage(`Excellent! Your assistant will handle ${service.toLowerCase()}. What are your business hours? (Like "Monday-Friday 9am-5pm" or "24/7 for emergencies")`, 800);
-  };
-
-  const createPhoneAssistant = async (finalData: OnboardingData) => {
-    addBotMessage(
-      <div className="space-y-3">
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <h4 className="font-semibold text-blue-800 mb-2">🤖 Creating Your Assistant...</h4>
-          <div className="space-y-2 text-sm text-blue-700">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full" aria-hidden="true"></div>
-              <span>Setting up phone number</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full" aria-hidden="true"></div>
-              <span>Teaching about {finalData.businessType} services</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full" aria-hidden="true"></div>
-              <span>Programming {finalData.phoneStyle} conversation style</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" aria-hidden="true"></div>
-              <span>Testing everything works...</span>
-            </div>
-          </div>
-        </div>
-      </div>,
-      800
-    );
-
-    setTimeout(async () => {
-      setShowPhoneNumber(true);
-      
-      // Complete onboarding in database
-      await completeOnboarding(finalData);
-      
-      addBotMessage(
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <h4 className="font-semibold text-green-800 mb-2">📞 Your New Phone Number</h4>
-          <div className="text-2xl font-bold text-green-800 mb-2" aria-label={`Phone number ${phoneNumber}`}>{phoneNumber}</div>
-          <p className="text-sm text-green-700">This number is ready to take calls right now!</p>
-        </div>,
-        1000
-      );
-    }, 3000);
-  };
-
-  const showFinalInstructions = () => {
-    addBotMessage(
-      <div className="space-y-4">
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <h4 className="font-semibold text-green-800 mb-3">✅ You're All Set!</h4>
-          <div className="space-y-2 text-sm text-green-700">
-            <p><strong>Your phone number:</strong> {phoneNumber}</p>
-            <p><strong>Business:</strong> {businessData.businessName}</p>
-            <p><strong>Services:</strong> {businessData.services?.join(', ')}</p>
-            <p><strong>Hours:</strong> {businessData.hours}</p>
-          </div>
-        </div>
-        
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <h4 className="font-semibold text-blue-800 mb-2">What happens next:</h4>
-          <ul className="text-sm text-blue-700 space-y-1" role="list">
-            <li role="listitem">• Give customers your new number</li>
-            <li role="listitem">• Your assistant answers all calls</li>
-            <li role="listitem">• You get text summaries of each call</li>
-            <li role="listitem">• Appointments are added to your calendar</li>
-          </ul>
-        </div>
-        
-        <div className="flex gap-2">
-          <button 
-            onClick={() => window.open('#', '_blank')}
-            className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
-            aria-label="View dashboard in new tab"
-          >
-            View Dashboard <ExternalLink className="w-4 h-4" aria-hidden="true" />
-          </button>
-          <button 
-            onClick={onClose}
-            className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500"
-            aria-label="Close setup dialog"
-          >
-            Close
-          </button>
-        </div>
-      </div>,
-      800
-    );
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -318,6 +276,23 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
     }
   };
 
+  // Calculate progress based on profile data
+  const calculateProgress = () => {
+    if (!profile?.onboarding_data) return 0;
+    
+    const data = profile.onboarding_data;
+    const fields = [
+      'user_name', 'business_name', 'business_type', 'business_city',
+      'full_address', 'phone_number', 'contact_email', 'opening_hours',
+      'services', 'ai_use_cases'
+    ];
+    
+    const completedFields = fields.filter(field => data[field]).length;
+    return Math.round((completedFields / fields.length) * 100);
+  };
+
+  const progress = calculateProgress();
+
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" role="dialog" aria-labelledby="onboarding-title" aria-modal="true">
       <div className="bg-white rounded-2xl w-full max-w-4xl h-[90vh] flex flex-col shadow-2xl">
@@ -326,8 +301,8 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
           <div className="flex items-center gap-3">
             <Logo size="md" showText={false} />
             <div>
-              <h2 id="onboarding-title" className="text-xl font-bold text-gray-900">Cutcall Setup</h2>
-              <p className="text-sm text-gray-500">Let's get your business phone assistant ready</p>
+              <h2 id="onboarding-title" className="text-xl font-bold text-gray-900">AI-Powered Setup</h2>
+              <p className="text-sm text-gray-500">Let our AI assistant help you configure your phone assistant</p>
             </div>
           </div>
           
@@ -339,7 +314,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
                   style={{ width: `${progress}%` }}
                 ></div>
               </div>
-              <span className="text-sm text-gray-500" aria-label={`${Math.round(progress)} percent complete`}>{Math.round(progress)}%</span>
+              <span className="text-sm text-gray-500" aria-label={`${progress} percent complete`}>{progress}%</span>
             </div>
             
             <button
@@ -363,27 +338,51 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
                   message.type === 'user' 
                     ? 'bg-purple-500' 
+                    : message.type === 'tool'
+                    ? 'bg-blue-500'
                     : 'bg-gradient-to-r from-purple-500 to-blue-500'
                 }`} aria-hidden="true">
-                  {message.type === 'user' ? 
-                    <User className="w-4 h-4 text-white" /> : 
-                    <Logo size="sm" variant="white" showText={false} />
-                  }
+                  {message.type === 'user' ? (
+                    <User className="w-4 h-4 text-white" />
+                  ) : message.type === 'tool' ? (
+                    getToolIcon(message.toolName || '')
+                  ) : (
+                    <Bot className="w-4 h-4 text-white" />
+                  )}
                 </div>
                 
                 <div className={`rounded-2xl px-6 py-4 ${
                   message.type === 'user'
                     ? 'bg-purple-500 text-white'
+                    : message.type === 'tool'
+                    ? 'bg-blue-50 text-blue-800 border border-blue-200'
                     : 'bg-gray-50 text-gray-900'
-                }`} role={message.type === 'user' ? 'note' : 'status'} aria-label={`${message.type === 'user' ? 'Your' : 'Assistant'} message`}>
+                }`} role={message.type === 'user' ? 'note' : 'status'} aria-label={`${message.type === 'user' ? 'Your' : message.type === 'tool' ? 'Tool' : 'Assistant'} message`}>
+                  
+                  {message.type === 'tool' && message.toolName && (
+                    <div className="flex items-center gap-2 mb-2 text-sm font-medium">
+                      {getToolIcon(message.toolName)}
+                      {getToolDescription(message.toolName)}
+                    </div>
+                  )}
+                  
                   {typeof message.content === 'string' ? (
-                    <p className="leading-relaxed">{message.content}</p>
+                    <div 
+                      className="leading-relaxed prose prose-sm max-w-none"
+                      dangerouslySetInnerHTML={{ 
+                        __html: message.content
+                          .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                          .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                          .replace(/\n/g, '<br>')
+                      }}
+                    />
                   ) : (
                     message.content
                   )}
                   
                   <div className={`text-xs mt-2 ${
-                    message.type === 'user' ? 'text-purple-100' : 'text-gray-500'
+                    message.type === 'user' ? 'text-purple-100' : 
+                    message.type === 'tool' ? 'text-blue-600' : 'text-gray-500'
                   }`}>
                     {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </div>
@@ -392,19 +391,31 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
             </div>
           ))}
           
-          {isTyping && (
+          {(isTyping || isToolExecuting) && (
             <div className="flex justify-start">
               <div className="flex gap-3">
                 <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center" aria-hidden="true">
-                  <Logo size="sm" variant="white" showText={false} />
+                  <Bot className="w-4 h-4 text-white" />
                 </div>
-                <div className="bg-gray-50 rounded-2xl px-6 py-4" aria-label="Assistant is typing">
-                  <div className="typing-indicator">
-                    <div className="typing-dot" style={{ '--delay': '0ms' } as React.CSSProperties}></div>
-                    <div className="typing-dot" style={{ '--delay': '150ms' } as React.CSSProperties}></div>
-                    <div className="typing-dot" style={{ '--delay': '300ms' } as React.CSSProperties}></div>
-                  </div>
-                  <span className="sr-only">Assistant is typing a response</span>
+                <div className="bg-gray-50 rounded-2xl px-6 py-4" aria-label="Assistant is working">
+                  {isToolExecuting ? (
+                    <div className="flex items-center gap-2 text-blue-600">
+                      {getToolIcon(currentToolName)}
+                      <span className="text-sm">{getToolDescription(currentToolName)}</span>
+                      <div className="typing-indicator ml-2">
+                        <div className="typing-dot" style={{ '--delay': '0ms' } as React.CSSProperties}></div>
+                        <div className="typing-dot" style={{ '--delay': '150ms' } as React.CSSProperties}></div>
+                        <div className="typing-dot" style={{ '--delay': '300ms' } as React.CSSProperties}></div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="typing-indicator">
+                      <div className="typing-dot" style={{ '--delay': '0ms' } as React.CSSProperties}></div>
+                      <div className="typing-dot" style={{ '--delay': '150ms' } as React.CSSProperties}></div>
+                      <div className="typing-dot" style={{ '--delay': '300ms' } as React.CSSProperties}></div>
+                    </div>
+                  )}
+                  <span className="sr-only">Assistant is working on your request</span>
                 </div>
               </div>
             </div>
@@ -416,27 +427,32 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
         {/* Input */}
         <div className="p-6 border-t border-gray-200">
           <div className="flex gap-4">
-            <label htmlFor="message-input" className="sr-only">Type your answer</label>
+            <label htmlFor="message-input" className="sr-only">Type your message</label>
             <textarea
               id="message-input"
               ref={inputRef}
               value={currentInput}
               onChange={(e) => setCurrentInput(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Type your answer..."
+              placeholder="Type your message..."
               className="flex-1 resize-none border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
               rows={1}
               aria-describedby="input-help"
+              disabled={isTyping || isToolExecuting}
             />
             <div id="input-help" className="sr-only">Press Enter to send your message</div>
             <button
               onClick={handleSendMessage}
-              disabled={!currentInput.trim() || isTyping}
+              disabled={!currentInput.trim() || isTyping || isToolExecuting}
               className="bg-gradient-to-r from-purple-500 to-blue-500 text-white p-3 rounded-xl hover:from-purple-600 hover:to-blue-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-purple-500"
               aria-label="Send message"
             >
               <Send className="w-5 h-5" />
             </button>
+          </div>
+          
+          <div className="mt-2 text-xs text-gray-500 text-center">
+            Powered by AI • Your data is secure and private
           </div>
         </div>
       </div>
