@@ -44,8 +44,8 @@ const Logo: React.FC<LogoProps> = ({
   const logoSrc = '/cutcall-logo-icon.png';
 
   return (
-    <div className={`flex items-center gap-3 ${className}`}>
-      <div className={`${sizeClasses[size]} relative flex items-center justify-center`}>
+    <div className={`flex items-center gap-3 py-2 ${className}`}>
+      <div className={`${sizeClasses[size]} relative flex items-center justify-center flex-shrink-0`}>
         <img
           src={logoSrc}
           alt="Cutcall icon"
@@ -60,7 +60,7 @@ const Logo: React.FC<LogoProps> = ({
       </div>
       
       {showText && (
-        <div className={`font-bold ${textSizeClasses[size]} ${textColor}`}>
+        <div className={`font-bold ${textSizeClasses[size]} ${textColor} flex-shrink-0`}>
           <span className={variant === 'white' ? 'text-white' : 'gradient-text'}>Cut</span>
           <span className={textColor}>call</span>
         </div>

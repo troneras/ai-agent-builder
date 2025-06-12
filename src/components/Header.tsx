@@ -70,15 +70,17 @@ const Header: React.FC<HeaderProps> = ({ onStartBuilding, onShowAuth }) => {
       }`}
       role="banner"
     >
-      <div className="max-w-7xl mx-auto px-4">
+      <div className="max-w-7xl mx-auto px-4 lg:px-6">
         <div className="flex items-center justify-between h-16 lg:h-20">
-          {/* Logo */}
-          <Logo 
-            size="lg" 
-            showText={true}
-            variant={isScrolled ? 'default' : 'white'}
-            className="flex-shrink-0"
-          />
+          {/* Logo with proper padding */}
+          <div className="flex items-center">
+            <Logo 
+              size="lg" 
+              showText={true}
+              variant={isScrolled ? 'default' : 'white'}
+              className="flex-shrink-0"
+            />
+          </div>
 
           {/* Desktop Navigation */}
           <nav className="hidden lg:flex items-center space-x-8" aria-label="Main navigation">
