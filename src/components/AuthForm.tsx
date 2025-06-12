@@ -128,10 +128,57 @@ const AuthForm: React.FC<AuthFormProps> = ({ onClose, onComplete, initialMode = 
         startResendCooldown();
       }
     } catch (error) {
+      console.error('Resend OTP error:', error);
       setMessage({ type: 'error', text: 'Failed to resend code. Please try again.' });
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const getErrorMessage = (error: any): string => {
+    if (!error) return 'An unexpected error occurred';
+    
+    const message = error.message || error.error_description || error.msg || '';
+    
+    // Handle specific Supabase auth errors
+    if (message.includes('Invalid login credentials') || message.includes('invalid_credentials')) {
+      return 'Invalid email or password. Please check your credentials and try again.';
+    }
+    
+    if (message.includes('Email not confirmed')) {
+      return 'Please verify your email first. Check your inbox for the verification code.';
+    }
+    
+    if (message.includes('User not found')) {
+      return 'No account found with this email address.';
+    }
+    
+    if (message.includes('Password should be at least')) {
+      return 'Password must be at least 6 characters long.';
+    }
+    
+    if (message.includes('User already registered')) {
+      return 'An account with this email already exists. Please sign in instead.';
+    }
+    
+    if (message.includes('expired')) {
+      return 'Verification code has expired. Please request a new one.';
+    }
+    
+    if (message.includes('invalid') && message.includes('token')) {
+      return 'Invalid verification code. Please check and try again.';
+    }
+    
+    if (message.includes('rate limit')) {
+      return 'Too many attempts. Please wait a moment before trying again.';
+    }
+    
+    if (message.includes('network') || message.includes('fetch')) {
+      return 'Network error. Please check your connection and try again.';
+    }
+    
+    // Return the original message if it's user-friendly, otherwise a generic message
+    return message.length > 0 && message.length < 100 ? message : 'An error occurred. Please try again.';
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -148,7 +195,8 @@ const AuthForm: React.FC<AuthFormProps> = ({ onClose, onComplete, initialMode = 
           const { data, error } = await authHelpers.signUp(formData.email, formData.password);
           
           if (error) {
-            setMessage({ type: 'error', text: error.message });
+            console.error('Registration error:', error);
+            setMessage({ type: 'error', text: getErrorMessage(error) });
           } else if (data.user && !data.session) {
             // Email confirmation required via OTP
             setMode('verify-otp');
@@ -169,13 +217,8 @@ const AuthForm: React.FC<AuthFormProps> = ({ onClose, onComplete, initialMode = 
           const { data, error } = await authHelpers.verifyOtp(formData.email, formData.otp, otpType);
           
           if (error) {
-            if (error.message.includes('expired')) {
-              setMessage({ type: 'error', text: 'Verification code has expired. Please request a new one.' });
-            } else if (error.message.includes('invalid')) {
-              setMessage({ type: 'error', text: 'Invalid verification code. Please check and try again.' });
-            } else {
-              setMessage({ type: 'error', text: error.message });
-            }
+            console.error('OTP verification error:', error);
+            setMessage({ type: 'error', text: getErrorMessage(error) });
           } else if (data.session) {
             if (otpType === 'recovery') {
               // For password recovery, go to reset password
@@ -193,18 +236,15 @@ const AuthForm: React.FC<AuthFormProps> = ({ onClose, onComplete, initialMode = 
           const { data, error } = await authHelpers.signIn(formData.email, formData.password);
           
           if (error) {
-            if (error.message.includes('Email not confirmed')) {
-              setMessage({ 
-                type: 'error', 
-                text: 'Please verify your email first. Check your inbox for the verification code.' 
-              });
+            console.error('Login error:', error);
+            const errorMessage = getErrorMessage(error);
+            
+            if (errorMessage.includes('verify your email')) {
               setMode('verify-otp');
               setOtpType('signup');
-            } else if (error.message.includes('Invalid login credentials')) {
-              setMessage({ type: 'error', text: 'Invalid email or password. Please try again.' });
-            } else {
-              setMessage({ type: 'error', text: error.message });
             }
+            
+            setMessage({ type: 'error', text: errorMessage });
           } else if (data.session) {
             onComplete();
           }
@@ -215,7 +255,8 @@ const AuthForm: React.FC<AuthFormProps> = ({ onClose, onComplete, initialMode = 
           const { error } = await authHelpers.resetPassword(formData.email);
           
           if (error) {
-            setMessage({ type: 'error', text: error.message });
+            console.error('Password reset error:', error);
+            setMessage({ type: 'error', text: getErrorMessage(error) });
           } else {
             setMode('verify-otp');
             setOtpType('recovery');
@@ -232,7 +273,8 @@ const AuthForm: React.FC<AuthFormProps> = ({ onClose, onComplete, initialMode = 
           const { error } = await authHelpers.updatePassword(formData.password);
           
           if (error) {
-            setMessage({ type: 'error', text: error.message });
+            console.error('Password update error:', error);
+            setMessage({ type: 'error', text: getErrorMessage(error) });
           } else {
             setMessage({ type: 'success', text: 'Password updated successfully!' });
             setTimeout(() => {
@@ -243,9 +285,10 @@ const AuthForm: React.FC<AuthFormProps> = ({ onClose, onComplete, initialMode = 
         }
       }
     } catch (error) {
+      console.error('Authentication error:', error);
       setMessage({ 
         type: 'error', 
-        text: error instanceof Error ? error.message : 'An unexpected error occurred' 
+        text: getErrorMessage(error)
       });
     } finally {
       setIsSubmitting(false);
