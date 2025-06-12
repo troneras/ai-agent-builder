@@ -38,6 +38,7 @@ CRITICAL RULES:
 3. Only use store tools AFTER the user confirms the data is accurate
 4. If user says "no" or corrects information, update your understanding but don't store until they confirm
 5. After using web_search_tool, ALWAYS generate a response presenting the findings and asking for confirmation
+6. After any tool execution, continue the conversation naturally - don't stop responding
 
 CONVERSATION FLOW:
 1. Get user's name for personalization
@@ -52,6 +53,7 @@ TOOL USAGE GUIDELINES:
 - After web search: Present findings in a friendly way and ask for confirmation
 - For storing data: Confirm what was saved and continue the conversation
 - For completion: Celebrate and explain next steps
+- ALWAYS continue the conversation after tool execution
 
 AI USE CASE EXPLANATIONS:
 - **Appointment Scheduling**: "I can integrate with your Google Calendar to automatically find available slots and book appointments when customers call"
@@ -71,7 +73,7 @@ CONVERSATION RESTORATION:
 - Review what information has already been collected
 - Ask what the user would like to continue with or update
 
-Remember: Confirmation is MANDATORY before storing any data!`
+Remember: Confirmation is MANDATORY before storing any data! Always continue the conversation after tool execution.`
 
 const tools = [
   {
@@ -532,6 +534,146 @@ async function handleToolCall(toolCall: any, supabase: any, userId: string) {
   return toolResult
 }
 
+async function processStreamWithToolCalls(
+  response: Response, 
+  controller: ReadableStreamDefaultController,
+  supabase: any,
+  userId: string,
+  conversationMessages: ChatMessage[]
+) {
+  const reader = response.body?.getReader()
+  const decoder = new TextDecoder()
+
+  if (!reader) {
+    controller.close()
+    return conversationMessages
+  }
+
+  let buffer = ''
+  let currentToolCalls: any[] = []
+  let assistantMessage = ''
+  let hasContent = false
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6)
+        if (data === '[DONE]') continue
+
+        try {
+          const parsed = JSON.parse(data)
+          const delta = parsed.choices?.[0]?.delta
+
+          if (delta?.tool_calls) {
+            // Handle tool calls
+            for (const toolCall of delta.tool_calls) {
+              if (!currentToolCalls[toolCall.index]) {
+                currentToolCalls[toolCall.index] = {
+                  id: toolCall.id,
+                  type: toolCall.type,
+                  function: { name: '', arguments: '' }
+                }
+              }
+
+              if (toolCall.function?.name) {
+                currentToolCalls[toolCall.index].function.name += toolCall.function.name
+              }
+              if (toolCall.function?.arguments) {
+                currentToolCalls[toolCall.index].function.arguments += toolCall.function.arguments
+              }
+            }
+          } else if (delta?.content) {
+            // Stream regular content
+            assistantMessage += delta.content
+            hasContent = true
+            const chunk = `data: ${JSON.stringify({ content: delta.content })}\n\n`
+            controller.enqueue(new TextEncoder().encode(chunk))
+          }
+
+          // Check if tool calls are complete
+          if (parsed.choices?.[0]?.finish_reason === 'tool_calls' && currentToolCalls.length > 0) {
+            // Add assistant message with tool calls to conversation
+            conversationMessages.push({
+              role: 'assistant',
+              content: assistantMessage || null,
+            })
+
+            // Execute tool calls and add to conversation
+            const toolMessages: ChatMessage[] = []
+            
+            for (const toolCall of currentToolCalls) {
+              if (toolCall.function.name && toolCall.function.arguments) {
+                // Send tool start notification to frontend
+                const toolStartChunk = `data: ${JSON.stringify({ 
+                  tool_name: toolCall.function.name 
+                })}\n\n`
+                controller.enqueue(new TextEncoder().encode(toolStartChunk))
+
+                const toolResult = await handleToolCall(toolCall, supabase, userId)
+
+                // Add tool result to conversation
+                toolMessages.push({
+                  role: 'tool',
+                  content: toolResult,
+                  tool_call_id: toolCall.id,
+                  name: toolCall.function.name
+                })
+
+                // Send tool completion notification to frontend
+                const toolChunk = `data: ${JSON.stringify({ 
+                  tool_result: `✅ ${toolCall.function.name} completed`,
+                  tool_name: toolCall.function.name 
+                })}\n\n`
+                controller.enqueue(new TextEncoder().encode(toolChunk))
+              }
+            }
+
+            conversationMessages.push(...toolMessages)
+
+            // Now call OpenAI again to get the assistant's response to the tool results
+            const followUpMessages: ChatMessage[] = [
+              { role: 'system', content: SYSTEM_PROMPT },
+              ...conversationMessages
+            ]
+
+            const followUpResponse = await callOpenAI(followUpMessages, true)
+            
+            // Recursively process the follow-up response
+            conversationMessages = await processStreamWithToolCalls(
+              followUpResponse, 
+              controller, 
+              supabase, 
+              userId, 
+              conversationMessages
+            )
+
+            return conversationMessages
+          }
+        } catch (parseError) {
+          console.error('Parse error:', parseError)
+        }
+      }
+    }
+  }
+
+  // If we had content but no tool calls, add the assistant message
+  if (hasContent) {
+    conversationMessages.push({
+      role: 'assistant',
+      content: assistantMessage
+    })
+  }
+
+  return conversationMessages
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders })
@@ -606,149 +748,21 @@ Deno.serve(async (req: Request) => {
         // Create a readable stream for SSE
         const stream = new ReadableStream({
           async start(controller) {
-            const reader = response.body?.getReader()
-            const decoder = new TextDecoder()
-
-            if (!reader) {
-              controller.close()
-              return
-            }
-
             try {
-              let buffer = ''
-              let currentToolCalls: any[] = []
               let conversationMessages = [...messages]
+              
+              // Process the stream with tool call handling
+              conversationMessages = await processStreamWithToolCalls(
+                response,
+                controller,
+                supabase,
+                userId,
+                conversationMessages
+              )
 
-              while (true) {
-                const { done, value } = await reader.read()
-                if (done) break
+              // Save the final conversation state
+              await saveConversationHistory(supabase, userId, threadId, conversationMessages)
 
-                buffer += decoder.decode(value, { stream: true })
-                const lines = buffer.split('\n')
-                buffer = lines.pop() || ''
-
-                for (const line of lines) {
-                  if (line.startsWith('data: ')) {
-                    const data = line.slice(6)
-                    if (data === '[DONE]') continue
-
-                    try {
-                      const parsed = JSON.parse(data)
-                      const delta = parsed.choices?.[0]?.delta
-
-                      if (delta?.tool_calls) {
-                        // Handle tool calls
-                        for (const toolCall of delta.tool_calls) {
-                          if (!currentToolCalls[toolCall.index]) {
-                            currentToolCalls[toolCall.index] = {
-                              id: toolCall.id,
-                              type: toolCall.type,
-                              function: { name: '', arguments: '' }
-                            }
-                          }
-
-                          if (toolCall.function?.name) {
-                            currentToolCalls[toolCall.index].function.name += toolCall.function.name
-                          }
-                          if (toolCall.function?.arguments) {
-                            currentToolCalls[toolCall.index].function.arguments += toolCall.function.arguments
-                          }
-                        }
-                      } else if (delta?.content) {
-                        // Stream regular content
-                        const chunk = `data: ${JSON.stringify({ content: delta.content })}\n\n`
-                        controller.enqueue(new TextEncoder().encode(chunk))
-                      }
-
-                      // Check if tool calls are complete
-                      if (parsed.choices?.[0]?.finish_reason === 'tool_calls' && currentToolCalls.length > 0) {
-                        // Execute tool calls and add to conversation
-                        const toolMessages: ChatMessage[] = []
-                        
-                        for (const toolCall of currentToolCalls) {
-                          if (toolCall.function.name && toolCall.function.arguments) {
-                            // Send tool start notification to frontend
-                            const toolStartChunk = `data: ${JSON.stringify({ 
-                              tool_name: toolCall.function.name 
-                            })}\n\n`
-                            controller.enqueue(new TextEncoder().encode(toolStartChunk))
-
-                            const toolResult = await handleToolCall(toolCall, supabase, userId)
-
-                            // Add tool result to conversation
-                            toolMessages.push({
-                              role: 'tool',
-                              content: toolResult,
-                              tool_call_id: toolCall.id,
-                              name: toolCall.function.name
-                            })
-
-                            // Send tool completion notification to frontend
-                            const toolChunk = `data: ${JSON.stringify({ 
-                              tool_result: `✅ ${toolCall.function.name} completed`,
-                              tool_name: toolCall.function.name 
-                            })}\n\n`
-                            controller.enqueue(new TextEncoder().encode(toolChunk))
-                          }
-                        }
-
-                        // Add assistant message with tool calls and tool results to conversation
-                        conversationMessages.push({
-                          role: 'assistant',
-                          content: '', // Tool calls don't have content
-                        })
-                        conversationMessages.push(...toolMessages)
-
-                        // Now call OpenAI again to get the assistant's response to the tool results
-                        const followUpMessages: ChatMessage[] = [
-                          { role: 'system', content: SYSTEM_PROMPT },
-                          ...conversationMessages
-                        ]
-
-                        const followUpResponse = await callOpenAI(followUpMessages, true)
-                        const followUpReader = followUpResponse.body?.getReader()
-
-                        if (followUpReader) {
-                          let followUpBuffer = ''
-                          
-                          while (true) {
-                            const { done: followUpDone, value: followUpValue } = await followUpReader.read()
-                            if (followUpDone) break
-
-                            followUpBuffer += decoder.decode(followUpValue, { stream: true })
-                            const followUpLines = followUpBuffer.split('\n')
-                            followUpBuffer = followUpLines.pop() || ''
-
-                            for (const followUpLine of followUpLines) {
-                              if (followUpLine.startsWith('data: ')) {
-                                const followUpData = followUpLine.slice(6)
-                                if (followUpData === '[DONE]') continue
-
-                                try {
-                                  const followUpParsed = JSON.parse(followUpData)
-                                  const followUpDelta = followUpParsed.choices?.[0]?.delta
-
-                                  if (followUpDelta?.content) {
-                                    // Stream the assistant's response to tool results
-                                    const chunk = `data: ${JSON.stringify({ content: followUpDelta.content })}\n\n`
-                                    controller.enqueue(new TextEncoder().encode(chunk))
-                                  }
-                                } catch (parseError) {
-                                  console.error('Follow-up parse error:', parseError)
-                                }
-                              }
-                            }
-                          }
-                        }
-
-                        currentToolCalls = []
-                      }
-                    } catch (parseError) {
-                      console.error('Parse error:', parseError)
-                    }
-                  }
-                }
-              }
             } catch (error) {
               console.error('Stream error:', error)
               const errorChunk = `data: ${JSON.stringify({ error: error.message })}\n\n`
