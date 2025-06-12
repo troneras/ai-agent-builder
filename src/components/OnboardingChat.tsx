@@ -26,6 +26,8 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
   const [messageIdCounter, setMessageIdCounter] = useState(0);
   const [isToolExecuting, setIsToolExecuting] = useState(false);
   const [currentToolName, setCurrentToolName] = useState<string>('');
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [isLoadingConversation, setIsLoadingConversation] = useState(true);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -40,9 +42,116 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
   }, [messages]);
 
   useEffect(() => {
-    // Start with a welcome message
+    // Load existing conversation or start new one
+    loadOrStartConversation();
+  }, [profile]);
+
+  const loadOrStartConversation = async () => {
+    if (!user) return;
+
+    try {
+      setIsLoadingConversation(true);
+
+      // Check if there's an existing thread ID in the profile
+      const existingThreadId = profile?.onboarding_data?.thread_id;
+      
+      if (existingThreadId && !profile?.onboarding_completed) {
+        // Restore existing conversation
+        await restoreConversation(existingThreadId);
+      } else {
+        // Start new conversation
+        await startNewConversation();
+      }
+    } catch (error) {
+      console.error('Error loading conversation:', error);
+      // Fallback to new conversation
+      await startNewConversation();
+    } finally {
+      setIsLoadingConversation(false);
+    }
+  };
+
+  const restoreConversation = async (existingThreadId: string) => {
+    try {
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/onboarding-chat`;
+      
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'restore_conversation',
+          threadId: existingThreadId,
+          userId: user.id
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to restore conversation');
+      }
+
+      const data = await response.json();
+      
+      if (data.messages && data.messages.length > 0) {
+        // Convert API messages to our message format
+        const restoredMessages = data.messages.map((msg: any, index: number) => ({
+          type: msg.role === 'user' ? 'user' : 'assistant',
+          content: msg.content,
+          timestamp: new Date(Date.now() - (data.messages.length - index) * 1000),
+          id: `restored-${index}`,
+        }));
+
+        setMessages(restoredMessages);
+        setThreadId(existingThreadId);
+        
+        // Add a restoration notice
+        addMessage('system', "💬 Welcome back! I've restored our previous conversation. Feel free to continue where we left off or ask me anything.");
+      } else {
+        // No messages found, start fresh
+        await startNewConversation();
+      }
+    } catch (error) {
+      console.error('Error restoring conversation:', error);
+      await startNewConversation();
+    }
+  };
+
+  const startNewConversation = async () => {
+    // Generate a new thread ID
+    const newThreadId = `thread_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    setThreadId(newThreadId);
+    
+    // Save thread ID to profile
+    await saveThreadId(newThreadId);
+    
+    // Start with welcome message
     addMessage('assistant', "👋 Hi! I'm your Cutcall setup assistant. I'm here to help you get your AI phone assistant ready for your business. Let's start with something simple - what's your name?");
-  }, []);
+  };
+
+  const saveThreadId = async (newThreadId: string) => {
+    if (!user) return;
+
+    try {
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/onboarding-chat`;
+      
+      await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'save_thread_id',
+          threadId: newThreadId,
+          userId: user.id
+        })
+      });
+    } catch (error) {
+      console.error('Error saving thread ID:', error);
+    }
+  };
 
   const generateMessageId = () => {
     const id = `msg-${Date.now()}-${messageIdCounter}`;
@@ -111,7 +220,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
   };
 
   const handleSendMessage = async () => {
-    if (!currentInput.trim() || isTyping || !user) return;
+    if (!currentInput.trim() || isTyping || !user || !threadId) return;
 
     const userMessage = currentInput.trim();
     
@@ -148,7 +257,9 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          action: 'chat',
           messages: conversationHistory,
+          threadId: threadId,
           userId: user.id
         }),
         signal: abortControllerRef.current.signal
@@ -288,6 +399,20 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
 
   const progress = calculateProgress();
 
+  // Show loading state while loading conversation
+  if (isLoadingConversation) {
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl w-full max-w-4xl h-[90vh] flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-purple-200 border-t-purple-500 rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading your conversation...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" role="dialog" aria-labelledby="onboarding-title" aria-modal="true">
       <div className="bg-white rounded-2xl w-full max-w-4xl h-[90vh] flex flex-col shadow-2xl">
@@ -297,7 +422,9 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
             <Logo size="md" showText={false} />
             <div>
               <h2 id="onboarding-title" className="text-xl font-bold text-gray-900">AI-Powered Setup</h2>
-              <p className="text-sm text-gray-500">Let our AI assistant help you configure your phone assistant</p>
+              <p className="text-sm text-gray-500">
+                {threadId ? `Thread: ${threadId.slice(-8)}` : 'Let our AI assistant help you configure your phone assistant'}
+              </p>
             </div>
           </div>
           
@@ -335,12 +462,16 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
                     ? 'bg-purple-500' 
                     : message.type === 'tool'
                     ? 'bg-blue-500'
+                    : message.type === 'system'
+                    ? 'bg-green-500'
                     : 'bg-gradient-to-r from-purple-500 to-blue-500'
                 }`} aria-hidden="true">
                   {message.type === 'user' ? (
                     <User className="w-4 h-4 text-white" />
                   ) : message.type === 'tool' ? (
                     getToolIcon(message.toolName || '')
+                  ) : message.type === 'system' ? (
+                    <CheckCircle className="w-4 h-4 text-white" />
                   ) : (
                     <Bot className="w-4 h-4 text-white" />
                   )}
@@ -351,8 +482,10 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
                     ? 'bg-purple-500 text-white'
                     : message.type === 'tool'
                     ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                    : message.type === 'system'
+                    ? 'bg-green-50 text-green-800 border border-green-200'
                     : 'bg-gray-50 text-gray-900'
-                }`} role={message.type === 'user' ? 'note' : 'status'} aria-label={`${message.type === 'user' ? 'Your' : message.type === 'tool' ? 'Tool' : 'Assistant'} message`}>
+                }`} role={message.type === 'user' ? 'note' : 'status'} aria-label={`${message.type === 'user' ? 'Your' : message.type === 'tool' ? 'Tool' : message.type === 'system' ? 'System' : 'Assistant'} message`}>
                   
                   {message.type === 'tool' && message.toolName && (
                     <div className="flex items-center gap-2 mb-2 text-sm font-medium">
@@ -377,7 +510,8 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
                   
                   <div className={`text-xs mt-2 ${
                     message.type === 'user' ? 'text-purple-100' : 
-                    message.type === 'tool' ? 'text-blue-600' : 'text-gray-500'
+                    message.type === 'tool' ? 'text-blue-600' : 
+                    message.type === 'system' ? 'text-green-600' : 'text-gray-500'
                   }`}>
                     {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </div>
@@ -433,12 +567,12 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
               className="flex-1 resize-none border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
               rows={1}
               aria-describedby="input-help"
-              disabled={isTyping || isToolExecuting}
+              disabled={isTyping || isToolExecuting || !threadId}
             />
             <div id="input-help" className="sr-only">Press Enter to send your message</div>
             <button
               onClick={handleSendMessage}
-              disabled={!currentInput.trim() || isTyping || isToolExecuting}
+              disabled={!currentInput.trim() || isTyping || isToolExecuting || !threadId}
               className="bg-gradient-to-r from-purple-500 to-blue-500 text-white p-3 rounded-xl hover:from-purple-600 hover:to-blue-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-purple-500"
               aria-label="Send message"
             >
@@ -447,7 +581,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
           </div>
           
           <div className="mt-2 text-xs text-gray-500 text-center">
-            Powered by AI • Your data is secure and private
+            {threadId ? `Thread ID: ${threadId} • ` : ''}Powered by AI • Your data is secure and private
           </div>
         </div>
       </div>

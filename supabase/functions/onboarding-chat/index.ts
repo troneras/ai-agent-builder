@@ -24,6 +24,8 @@ interface OnboardingData {
   services?: string[]
   ai_use_cases?: string[]
   onboarding_completed?: boolean
+  thread_id?: string
+  conversation_history?: ChatMessage[]
 }
 
 const SYSTEM_PROMPT = `You are Cutcall's friendly onboarding assistant. Your job is to help business owners set up their AI phone assistant by gathering essential information about their business.
@@ -62,6 +64,11 @@ PERSONALITY:
 - Excited about helping their business grow
 - Patient and understanding
 - Use emojis and markdown for better readability
+
+CONVERSATION RESTORATION:
+- If this is a restored conversation, acknowledge it briefly and continue naturally
+- Review what information has already been collected
+- Ask what the user would like to continue with or update
 
 Remember: Confirmation is MANDATORY before storing any data!`
 
@@ -364,6 +371,44 @@ async function updateUserProfile(supabase: any, userId: string, updates: Partial
   }
 }
 
+async function saveConversationHistory(supabase: any, userId: string, threadId: string, messages: ChatMessage[]) {
+  try {
+    const updates = {
+      thread_id: threadId,
+      conversation_history: messages
+    }
+    
+    return await updateUserProfile(supabase, userId, updates)
+  } catch (err) {
+    console.error('Error saving conversation:', err)
+    return { success: false, error: 'Failed to save conversation' }
+  }
+}
+
+async function restoreConversationHistory(supabase: any, threadId: string): Promise<{ messages: ChatMessage[], userId?: string }> {
+  try {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('onboarding_data, id')
+      .contains('onboarding_data', { thread_id: threadId })
+      .single()
+
+    if (error || !data) {
+      console.error('Error restoring conversation:', error)
+      return { messages: [] }
+    }
+
+    const conversationHistory = data.onboarding_data?.conversation_history || []
+    return { 
+      messages: conversationHistory,
+      userId: data.id
+    }
+  } catch (err) {
+    console.error('Conversation restore error:', err)
+    return { messages: [] }
+  }
+}
+
 async function completeUserOnboarding(supabase: any, userId: string, finalData: OnboardingData) {
   try {
     const { data, error } = await supabase
@@ -494,7 +539,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { messages, userId } = await req.json()
+    const { action, messages, threadId, userId } = await req.json()
 
     if (!userId) {
       return new Response(
@@ -509,118 +554,173 @@ Deno.serve(async (req: Request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Prepare messages with system prompt
-    const fullMessages: ChatMessage[] = [
-      { role: 'system', content: SYSTEM_PROMPT },
-      ...messages
-    ]
-
-    // Call OpenAI API with streaming
-    const response = await callOpenAI(fullMessages, true)
-
-    // Create a readable stream for SSE
-    const stream = new ReadableStream({
-      async start(controller) {
-        const reader = response.body?.getReader()
-        const decoder = new TextDecoder()
-
-        if (!reader) {
-          controller.close()
-          return
+    // Handle different actions
+    switch (action) {
+      case 'save_thread_id':
+        if (!threadId) {
+          return new Response(
+            JSON.stringify({ error: 'Thread ID is required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
         }
 
-        try {
-          let buffer = ''
-          let currentToolCalls: any[] = []
+        const saveResult = await updateUserProfile(supabase, userId, { thread_id: threadId })
+        return new Response(
+          JSON.stringify({ success: saveResult.success }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
 
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
+      case 'restore_conversation':
+        if (!threadId) {
+          return new Response(
+            JSON.stringify({ error: 'Thread ID is required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
 
-            buffer += decoder.decode(value, { stream: true })
-            const lines = buffer.split('\n')
-            buffer = lines.pop() || ''
+        const { messages: restoredMessages } = await restoreConversationHistory(supabase, threadId)
+        return new Response(
+          JSON.stringify({ messages: restoredMessages }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
 
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6)
-                if (data === '[DONE]') continue
+      case 'chat':
+        if (!messages || !threadId) {
+          return new Response(
+            JSON.stringify({ error: 'Messages and thread ID are required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
 
-                try {
-                  const parsed = JSON.parse(data)
-                  const delta = parsed.choices?.[0]?.delta
+        // Save conversation history
+        await saveConversationHistory(supabase, userId, threadId, messages)
 
-                  if (delta?.tool_calls) {
-                    // Handle tool calls
-                    for (const toolCall of delta.tool_calls) {
-                      if (!currentToolCalls[toolCall.index]) {
-                        currentToolCalls[toolCall.index] = {
-                          id: toolCall.id,
-                          type: toolCall.type,
-                          function: { name: '', arguments: '' }
+        // Prepare messages with system prompt
+        const fullMessages: ChatMessage[] = [
+          { role: 'system', content: SYSTEM_PROMPT },
+          ...messages
+        ]
+
+        // Call OpenAI API with streaming
+        const response = await callOpenAI(fullMessages, true)
+
+        // Create a readable stream for SSE
+        const stream = new ReadableStream({
+          async start(controller) {
+            const reader = response.body?.getReader()
+            const decoder = new TextDecoder()
+
+            if (!reader) {
+              controller.close()
+              return
+            }
+
+            try {
+              let buffer = ''
+              let currentToolCalls: any[] = []
+
+              while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+
+                buffer += decoder.decode(value, { stream: true })
+                const lines = buffer.split('\n')
+                buffer = lines.pop() || ''
+
+                for (const line of lines) {
+                  if (line.startsWith('data: ')) {
+                    const data = line.slice(6)
+                    if (data === '[DONE]') continue
+
+                    try {
+                      const parsed = JSON.parse(data)
+                      const delta = parsed.choices?.[0]?.delta
+
+                      if (delta?.tool_calls) {
+                        // Handle tool calls
+                        for (const toolCall of delta.tool_calls) {
+                          if (!currentToolCalls[toolCall.index]) {
+                            currentToolCalls[toolCall.index] = {
+                              id: toolCall.id,
+                              type: toolCall.type,
+                              function: { name: '', arguments: '' }
+                            }
+                          }
+
+                          if (toolCall.function?.name) {
+                            currentToolCalls[toolCall.index].function.name += toolCall.function.name
+                          }
+                          if (toolCall.function?.arguments) {
+                            currentToolCalls[toolCall.index].function.arguments += toolCall.function.arguments
+                          }
                         }
+                      } else if (delta?.content) {
+                        // Stream regular content
+                        const chunk = `data: ${JSON.stringify({ content: delta.content })}\n\n`
+                        controller.enqueue(new TextEncoder().encode(chunk))
                       }
 
-                      if (toolCall.function?.name) {
-                        currentToolCalls[toolCall.index].function.name += toolCall.function.name
+                      // Check if tool calls are complete
+                      if (parsed.choices?.[0]?.finish_reason === 'tool_calls' && currentToolCalls.length > 0) {
+                        // Execute tool calls
+                        for (const toolCall of currentToolCalls) {
+                          if (toolCall.function.name && toolCall.function.arguments) {
+                            // Send tool start notification
+                            const toolStartChunk = `data: ${JSON.stringify({ 
+                              tool_name: toolCall.function.name 
+                            })}\n\n`
+                            controller.enqueue(new TextEncoder().encode(toolStartChunk))
+
+                            const toolResult = await handleToolCall(toolCall, supabase, userId)
+
+                            // Send tool result to client
+                            const toolChunk = `data: ${JSON.stringify({ 
+                              tool_result: toolResult,
+                              tool_name: toolCall.function.name 
+                            })}\n\n`
+                            controller.enqueue(new TextEncoder().encode(toolChunk))
+
+                            // Update conversation history with tool result
+                            const updatedMessages = [
+                              ...messages,
+                              { role: 'assistant', content: `Tool executed: ${toolCall.function.name}` }
+                            ]
+                            await saveConversationHistory(supabase, userId, threadId, updatedMessages)
+                          }
+                        }
+                        currentToolCalls = []
                       }
-                      if (toolCall.function?.arguments) {
-                        currentToolCalls[toolCall.index].function.arguments += toolCall.function.arguments
-                      }
+                    } catch (parseError) {
+                      console.error('Parse error:', parseError)
                     }
-                  } else if (delta?.content) {
-                    // Stream regular content
-                    const chunk = `data: ${JSON.stringify({ content: delta.content })}\n\n`
-                    controller.enqueue(new TextEncoder().encode(chunk))
                   }
-
-                  // Check if tool calls are complete
-                  if (parsed.choices?.[0]?.finish_reason === 'tool_calls' && currentToolCalls.length > 0) {
-                    // Execute tool calls
-                    for (const toolCall of currentToolCalls) {
-                      if (toolCall.function.name && toolCall.function.arguments) {
-                        // Send tool start notification
-                        const toolStartChunk = `data: ${JSON.stringify({ 
-                          tool_name: toolCall.function.name 
-                        })}\n\n`
-                        controller.enqueue(new TextEncoder().encode(toolStartChunk))
-
-                        const toolResult = await handleToolCall(toolCall, supabase, userId)
-
-                        // Send tool result to client
-                        const toolChunk = `data: ${JSON.stringify({ 
-                          tool_result: toolResult,
-                          tool_name: toolCall.function.name 
-                        })}\n\n`
-                        controller.enqueue(new TextEncoder().encode(toolChunk))
-                      }
-                    }
-                    currentToolCalls = []
-                  }
-                } catch (parseError) {
-                  console.error('Parse error:', parseError)
                 }
               }
+            } catch (error) {
+              console.error('Stream error:', error)
+              const errorChunk = `data: ${JSON.stringify({ error: error.message })}\n\n`
+              controller.enqueue(new TextEncoder().encode(errorChunk))
+            } finally {
+              controller.close()
             }
           }
-        } catch (error) {
-          console.error('Stream error:', error)
-          const errorChunk = `data: ${JSON.stringify({ error: error.message })}\n\n`
-          controller.enqueue(new TextEncoder().encode(errorChunk))
-        } finally {
-          controller.close()
-        }
-      }
-    })
+        })
 
-    return new Response(stream, {
-      headers: {
-        ...corsHeaders,
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      },
-    })
+        return new Response(stream, {
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+          },
+        })
+
+      default:
+        return new Response(
+          JSON.stringify({ error: 'Invalid action' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+    }
 
   } catch (error) {
     console.error('Function error:', error)
