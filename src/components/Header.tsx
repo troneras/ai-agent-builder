@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, LogIn } from 'lucide-react';
 import Logo from './Logo';
 
 interface HeaderProps {
   onStartBuilding: () => void;
+  onShowAuth: (mode: 'register' | 'login') => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ onStartBuilding }) => {
+const Header: React.FC<HeaderProps> = ({ onStartBuilding, onShowAuth }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('');
@@ -107,8 +108,21 @@ const Header: React.FC<HeaderProps> = ({ onStartBuilding }) => {
             ))}
           </nav>
 
-          {/* CTA Button */}
+          {/* Desktop CTA Buttons */}
           <div className="hidden lg:flex items-center space-x-4">
+            <button
+              onClick={() => onShowAuth('login')}
+              className={`px-4 py-2 rounded-lg font-medium transition-all duration-300 hover:scale-105 focus:outline-none focus:ring-2 flex items-center gap-2 ${
+                isScrolled
+                  ? 'text-gray-700 hover:bg-gray-100 focus:ring-gray-500/50'
+                  : 'text-white/90 hover:bg-white/10 focus:ring-white/50'
+              }`}
+              aria-label="Sign in to your account"
+            >
+              <LogIn className="w-4 h-4" aria-hidden="true" />
+              Sign In
+            </button>
+            
             <button
               onClick={onStartBuilding}
               className={`px-6 py-3 rounded-xl font-semibold transition-all duration-300 hover:scale-105 focus:outline-none focus:ring-4 ${
@@ -171,16 +185,31 @@ const Header: React.FC<HeaderProps> = ({ onStartBuilding }) => {
                   />
                 </button>
               ))}
-              <button
-                onClick={() => {
-                  onStartBuilding();
-                  setIsMobileMenuOpen(false);
-                }}
-                className="w-full bg-gradient-to-r from-purple-500 to-blue-500 text-white px-6 py-3 rounded-xl font-semibold hover:from-purple-600 hover:to-blue-600 transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-purple-500/50"
-                aria-label="Start setting up your phone assistant"
-              >
-                Get Started
-              </button>
+              
+              <div className="pt-4 border-t border-gray-200 space-y-3">
+                <button
+                  onClick={() => {
+                    onShowAuth('login');
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="w-full text-left text-gray-700 hover:text-purple-600 font-medium py-2 transition-colors focus:outline-none flex items-center gap-2"
+                  aria-label="Sign in to your account"
+                >
+                  <LogIn className="w-4 h-4" aria-hidden="true" />
+                  Sign In
+                </button>
+                
+                <button
+                  onClick={() => {
+                    onStartBuilding();
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="w-full bg-gradient-to-r from-purple-500 to-blue-500 text-white px-6 py-3 rounded-xl font-semibold hover:from-purple-600 hover:to-blue-600 transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-purple-500/50"
+                  aria-label="Start setting up your phone assistant"
+                >
+                  Get Started
+                </button>
+              </div>
             </nav>
           </div>
         )}
