@@ -23,7 +23,6 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentInput, setCurrentInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
   const [messageIdCounter, setMessageIdCounter] = useState(0);
   const [isToolExecuting, setIsToolExecuting] = useState(false);
   const [currentToolName, setCurrentToolName] = useState<string>('');
@@ -42,34 +41,33 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
 
   useEffect(() => {
     // Start with a welcome message
-    addAssistantMessage("👋 Hi! I'm your Cutcall setup assistant. I'm here to help you get your AI phone assistant ready for your business. Let's start with something simple - what's your name?");
+    addMessage('assistant', "👋 Hi! I'm your Cutcall setup assistant. I'm here to help you get your AI phone assistant ready for your business. Let's start with something simple - what's your name?");
   }, []);
 
   const generateMessageId = () => {
-    const id = `msg-${messageIdCounter}`;
+    const id = `msg-${Date.now()}-${messageIdCounter}`;
     setMessageIdCounter(prev => prev + 1);
     return id;
   };
 
   const addMessage = (type: Message['type'], content: string | React.ReactNode, toolName?: string) => {
     const messageId = generateMessageId();
-    setMessages(prev => {
-      const messageExists = prev.some(msg => msg.id === messageId);
-      if (messageExists) return prev;
-      return [...prev, { type, content, timestamp: new Date(), id: messageId, toolName }];
-    });
+    const newMessage: Message = { 
+      type, 
+      content, 
+      timestamp: new Date(), 
+      id: messageId, 
+      toolName 
+    };
+    
+    setMessages(prev => [...prev, newMessage]);
+    return messageId;
   };
 
-  const addUserMessage = (content: string) => {
-    addMessage('user', content);
-  };
-
-  const addAssistantMessage = (content: string | React.ReactNode) => {
-    addMessage('assistant', content);
-  };
-
-  const addToolMessage = (content: string, toolName: string) => {
-    addMessage('tool', content, toolName);
+  const updateMessage = (messageId: string, content: string | React.ReactNode) => {
+    setMessages(prev => prev.map(msg => 
+      msg.id === messageId ? { ...msg, content } : msg
+    ));
   };
 
   const getToolIcon = (toolName: string) => {
@@ -116,7 +114,9 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
     if (!currentInput.trim() || isTyping || !user) return;
 
     const userMessage = currentInput.trim();
-    addUserMessage(userMessage);
+    
+    // Add user message immediately
+    addMessage('user', userMessage);
     setCurrentInput('');
     setIsTyping(true);
 
@@ -130,6 +130,17 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
 
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/onboarding-chat`;
       
+      // Prepare conversation history for API
+      const conversationHistory = messages
+        .filter(m => m.type === 'user' || m.type === 'assistant')
+        .map(m => ({
+          role: m.type === 'user' ? 'user' : 'assistant',
+          content: typeof m.content === 'string' ? m.content : ''
+        }));
+
+      // Add the new user message to history
+      conversationHistory.push({ role: 'user', content: userMessage });
+
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
@@ -137,13 +148,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          messages: [
-            ...messages.filter(m => m.type === 'user' || m.type === 'assistant').map(m => ({
-              role: m.type === 'user' ? 'user' : 'assistant',
-              content: typeof m.content === 'string' ? m.content : ''
-            })),
-            { role: 'user', content: userMessage }
-          ],
+          messages: conversationHistory,
           userId: user.id
         }),
         signal: abortControllerRef.current.signal
@@ -161,7 +166,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
       }
 
       let assistantMessage = '';
-      let currentMessageId = generateMessageId();
+      let currentAssistantMessageId: string | null = null;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -176,35 +181,21 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
               const data = JSON.parse(line.slice(6));
               
               if (data.content) {
-                // Stream assistant message content
+                // Handle streaming assistant message content
                 assistantMessage += data.content;
                 
-                // Update the current message
-                setMessages(prev => {
-                  const newMessages = [...prev];
-                  const existingIndex = newMessages.findIndex(m => m.id === currentMessageId);
-                  
-                  if (existingIndex >= 0) {
-                    newMessages[existingIndex] = {
-                      ...newMessages[existingIndex],
-                      content: assistantMessage
-                    };
-                  } else {
-                    newMessages.push({
-                      type: 'assistant',
-                      content: assistantMessage,
-                      timestamp: new Date(),
-                      id: currentMessageId
-                    });
-                  }
-                  
-                  return newMessages;
-                });
+                if (!currentAssistantMessageId) {
+                  // Create new assistant message
+                  currentAssistantMessageId = addMessage('assistant', assistantMessage);
+                } else {
+                  // Update existing assistant message
+                  updateMessage(currentAssistantMessageId, assistantMessage);
+                }
               } else if (data.tool_result && data.tool_name) {
                 // Handle tool execution result
                 setIsToolExecuting(false);
                 setCurrentToolName('');
-                addToolMessage(data.tool_result, data.tool_name);
+                addMessage('tool', data.tool_result, data.tool_name);
                 
                 // Refresh profile data after tool execution
                 if (data.tool_name.startsWith('store_') || data.tool_name === 'complete_onboarding') {
@@ -214,7 +205,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
                 // If onboarding is complete, show completion UI
                 if (data.tool_name === 'complete_onboarding') {
                   setTimeout(() => {
-                    addAssistantMessage(
+                    addMessage('assistant', 
                       <div className="space-y-4">
                         <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                           <h4 className="font-semibold text-green-800 mb-2">🎉 Setup Complete!</h4>
@@ -243,9 +234,13 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
                     );
                   }, 1000);
                 }
+              } else if (data.tool_name && !data.tool_result) {
+                // Tool execution started
+                setIsToolExecuting(true);
+                setCurrentToolName(data.tool_name);
               } else if (data.error) {
                 console.error('Stream error:', data.error);
-                addAssistantMessage(`❌ Sorry, I encountered an error: ${data.error}`);
+                addMessage('assistant', `❌ Sorry, I encountered an error: ${data.error}`);
               }
             } catch (parseError) {
               console.error('Parse error:', parseError);
@@ -261,7 +256,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
       }
       
       console.error('Chat error:', error);
-      addAssistantMessage('❌ Sorry, I encountered an error. Please try again.');
+      addMessage('assistant', '❌ Sorry, I encountered an error. Please try again.');
     } finally {
       setIsTyping(false);
       setIsToolExecuting(false);

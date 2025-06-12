@@ -317,12 +317,36 @@ async function callSearchModel(query: string) {
   return data.choices[0].message.content
 }
 
-async function updateUserProfile(supabase: any, userId: string, updates: Partial<OnboardingData>) {
+async function getCurrentProfileData(supabase: any, userId: string): Promise<OnboardingData> {
   try {
     const { data, error } = await supabase
       .from('user_profiles')
+      .select('onboarding_data')
+      .eq('id', userId)
+      .single()
+
+    if (error) {
+      console.error('Error fetching profile:', error)
+      return {}
+    }
+
+    return data?.onboarding_data || {}
+  } catch (err) {
+    console.error('Profile fetch error:', err)
+    return {}
+  }
+}
+
+async function updateUserProfile(supabase: any, userId: string, updates: Partial<OnboardingData>) {
+  try {
+    // Get current data first
+    const currentData = await getCurrentProfileData(supabase, userId)
+    const mergedData = { ...currentData, ...updates }
+
+    const { data, error } = await supabase
+      .from('user_profiles')
       .update({
-        onboarding_data: updates,
+        onboarding_data: mergedData,
         updated_at: new Date().toISOString()
       })
       .eq('id', userId)
@@ -365,91 +389,92 @@ async function completeUserOnboarding(supabase: any, userId: string, finalData: 
   }
 }
 
-async function handleToolCall(toolCall: any, supabase: any, userId: string, currentData: OnboardingData) {
+async function handleToolCall(toolCall: any, supabase: any, userId: string) {
   const { name, arguments: args } = toolCall.function
   const parsedArgs = JSON.parse(args)
 
   let toolResult = ''
-  let updatedData = { ...currentData }
+  let updates: Partial<OnboardingData> = {}
 
   try {
     switch (name) {
       case 'store_user_name':
-        updatedData.user_name = parsedArgs.user_name
-        await updateUserProfile(supabase, userId, updatedData)
-        toolResult = `💾 Stored user name: ${parsedArgs.user_name}`
+        updates.user_name = parsedArgs.user_name
+        await updateUserProfile(supabase, userId, updates)
+        toolResult = `✅ Saved your name: ${parsedArgs.user_name}`
         break
 
       case 'store_business_name':
-        updatedData.business_name = parsedArgs.business_name
-        await updateUserProfile(supabase, userId, updatedData)
-        toolResult = `💾 Stored business name: ${parsedArgs.business_name}`
+        updates.business_name = parsedArgs.business_name
+        await updateUserProfile(supabase, userId, updates)
+        toolResult = `✅ Saved business name: ${parsedArgs.business_name}`
         break
 
       case 'store_business_type':
-        updatedData.business_type = parsedArgs.business_type
-        await updateUserProfile(supabase, userId, updatedData)
-        toolResult = `💾 Stored business type: ${parsedArgs.business_type}`
+        updates.business_type = parsedArgs.business_type
+        await updateUserProfile(supabase, userId, updates)
+        toolResult = `✅ Saved business type: ${parsedArgs.business_type}`
         break
 
       case 'store_business_city':
-        updatedData.business_city = parsedArgs.business_city
-        await updateUserProfile(supabase, userId, updatedData)
-        toolResult = `💾 Stored business city: ${parsedArgs.business_city}`
+        updates.business_city = parsedArgs.business_city
+        await updateUserProfile(supabase, userId, updates)
+        toolResult = `✅ Saved business location: ${parsedArgs.business_city}`
         break
 
       case 'store_business_address':
-        updatedData.full_address = parsedArgs.full_address
-        await updateUserProfile(supabase, userId, updatedData)
-        toolResult = `💾 Stored business address: ${parsedArgs.full_address}`
+        updates.full_address = parsedArgs.full_address
+        await updateUserProfile(supabase, userId, updates)
+        toolResult = `✅ Saved business address: ${parsedArgs.full_address}`
         break
 
       case 'store_business_phone':
-        updatedData.phone_number = parsedArgs.phone_number
-        await updateUserProfile(supabase, userId, updatedData)
-        toolResult = `💾 Stored business phone: ${parsedArgs.phone_number}`
+        updates.phone_number = parsedArgs.phone_number
+        await updateUserProfile(supabase, userId, updates)
+        toolResult = `✅ Saved phone number: ${parsedArgs.phone_number}`
         break
 
       case 'store_business_email':
-        updatedData.contact_email = parsedArgs.contact_email
-        await updateUserProfile(supabase, userId, updatedData)
-        toolResult = `💾 Stored business email: ${parsedArgs.contact_email}`
+        updates.contact_email = parsedArgs.contact_email
+        await updateUserProfile(supabase, userId, updates)
+        toolResult = `✅ Saved email address: ${parsedArgs.contact_email}`
         break
 
       case 'store_business_hours':
-        updatedData.opening_hours = parsedArgs.opening_hours
-        await updateUserProfile(supabase, userId, updatedData)
-        toolResult = `💾 Stored business hours: ${parsedArgs.opening_hours}`
+        updates.opening_hours = parsedArgs.opening_hours
+        await updateUserProfile(supabase, userId, updates)
+        toolResult = `✅ Saved business hours: ${parsedArgs.opening_hours}`
         break
 
       case 'store_business_services':
-        updatedData.services = parsedArgs.services
-        await updateUserProfile(supabase, userId, updatedData)
-        toolResult = `💾 Stored business services: ${parsedArgs.services.join(', ')}`
+        updates.services = parsedArgs.services
+        await updateUserProfile(supabase, userId, updates)
+        toolResult = `✅ Saved services: ${parsedArgs.services.join(', ')}`
         break
 
       case 'store_business_website':
-        updatedData.website = parsedArgs.website
-        await updateUserProfile(supabase, userId, updatedData)
-        toolResult = `💾 Stored business website: ${parsedArgs.website}`
+        updates.website = parsedArgs.website
+        await updateUserProfile(supabase, userId, updates)
+        toolResult = `✅ Saved website: ${parsedArgs.website}`
         break
 
       case 'store_ai_use_cases':
-        updatedData.ai_use_cases = parsedArgs.ai_use_cases
-        await updateUserProfile(supabase, userId, updatedData)
-        toolResult = `💾 Stored AI use cases: ${parsedArgs.ai_use_cases.join(', ')}`
+        updates.ai_use_cases = parsedArgs.ai_use_cases
+        await updateUserProfile(supabase, userId, updates)
+        toolResult = `✅ Saved AI preferences: ${parsedArgs.ai_use_cases.join(', ')}`
         break
 
       case 'web_search_tool':
         const searchQuery = `Find detailed information about "${parsedArgs.business_name}" ${parsedArgs.business_type} business in ${parsedArgs.city}. Include: full address, phone number, email, website, operating hours, and services offered.`
         const searchResults = await callSearchModel(searchQuery)
-        toolResult = `🔍 **Search Results for ${parsedArgs.business_name}:**\n\n${searchResults}\n\n*Please review this information and let me know if it's accurate before I save it to your profile.*`
+        toolResult = `🔍 **Found information about ${parsedArgs.business_name}:**\n\n${searchResults}\n\n*Please review this information and let me know if it's accurate before I save it to your profile.*`
         break
 
       case 'complete_onboarding':
-        updatedData.onboarding_completed = true
-        await completeUserOnboarding(supabase, userId, updatedData)
-        toolResult = `✅ **Onboarding Complete!**\n\n${parsedArgs.summary}\n\nYour AI phone assistant is now ready to be configured!`
+        const currentData = await getCurrentProfileData(supabase, userId)
+        const finalData = { ...currentData, onboarding_completed: true }
+        await completeUserOnboarding(supabase, userId, finalData)
+        toolResult = `🎉 **Setup Complete!**\n\n${parsedArgs.summary}\n\nYour AI phone assistant is now ready to be configured!`
         break
 
       default:
@@ -460,7 +485,7 @@ async function handleToolCall(toolCall: any, supabase: any, userId: string, curr
     toolResult = `❌ Error executing ${name}: ${error.message}`
   }
 
-  return { toolResult, updatedData }
+  return toolResult
 }
 
 Deno.serve(async (req: Request) => {
@@ -483,15 +508,6 @@ Deno.serve(async (req: Request) => {
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
-
-    // Get current user profile data
-    const { data: profile } = await supabase
-      .from('user_profiles')
-      .select('onboarding_data')
-      .eq('id', userId)
-      .single()
-
-    let currentData: OnboardingData = profile?.onboarding_data || {}
 
     // Prepare messages with system prompt
     const fullMessages: ChatMessage[] = [
@@ -516,7 +532,6 @@ Deno.serve(async (req: Request) => {
         try {
           let buffer = ''
           let currentToolCalls: any[] = []
-          let toolCallIndex = 0
 
           while (true) {
             const { done, value } = await reader.read()
@@ -564,13 +579,13 @@ Deno.serve(async (req: Request) => {
                     // Execute tool calls
                     for (const toolCall of currentToolCalls) {
                       if (toolCall.function.name && toolCall.function.arguments) {
-                        const { toolResult, updatedData } = await handleToolCall(
-                          toolCall, 
-                          supabase, 
-                          userId, 
-                          currentData
-                        )
-                        currentData = updatedData
+                        // Send tool start notification
+                        const toolStartChunk = `data: ${JSON.stringify({ 
+                          tool_name: toolCall.function.name 
+                        })}\n\n`
+                        controller.enqueue(new TextEncoder().encode(toolStartChunk))
+
+                        const toolResult = await handleToolCall(toolCall, supabase, userId)
 
                         // Send tool result to client
                         const toolChunk = `data: ${JSON.stringify({ 
