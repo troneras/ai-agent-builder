@@ -27,7 +27,6 @@ interface OnboardingData {
   ai_use_cases?: string[]
   onboarding_completed?: boolean
   thread_id?: string
-  conversation_history?: ChatMessage[]
 }
 
 const SYSTEM_PROMPT = `You are Cutcall's friendly onboarding assistant. Your job is to help business owners set up their AI phone assistant by gathering essential information about their business.
@@ -68,11 +67,6 @@ PERSONALITY:
 - Patient and understanding
 - Use emojis and markdown for better readability
 
-CONVERSATION RESTORATION:
-- If this is a restored conversation, acknowledge it briefly and continue naturally
-- Review what information has already been collected
-- Ask what the user would like to continue with or update
-
 Remember: Confirmation is MANDATORY before storing any data! Always continue the conversation after tool execution.`
 
 const tools = [
@@ -93,137 +87,56 @@ const tools = [
   {
     type: "function",
     function: {
-      name: "store_business_name",
-      description: "Store business name after confirmation",
+      name: "store_business_info",
+      description: "Store business name and type after confirmation",
       parameters: {
         type: "object",
         properties: {
-          business_name: { type: "string", description: "The business name" }
-        },
-        required: ["business_name"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "store_business_type",
-      description: "Store business type/industry after confirmation",
-      parameters: {
-        type: "object",
-        properties: {
+          business_name: { type: "string", description: "The business name" },
           business_type: { type: "string", description: "Type of business (e.g., restaurant, salon, plumbing)" }
         },
-        required: ["business_type"]
+        required: ["business_name", "business_type"]
       }
     }
   },
   {
     type: "function",
     function: {
-      name: "store_business_city",
-      description: "Store business city/location after confirmation",
+      name: "store_contact_info",
+      description: "Store business contact information after confirmation",
       parameters: {
         type: "object",
         properties: {
-          business_city: { type: "string", description: "City where the business is located" }
-        },
-        required: ["business_city"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "store_business_address",
-      description: "Store complete business address after confirmation",
-      parameters: {
-        type: "object",
-        properties: {
+          phone_number: { type: "string", description: "Business phone number" },
+          email: { type: "string", description: "Business email address" },
           full_address: { type: "string", description: "Complete business address" }
-        },
-        required: ["full_address"]
+        }
       }
     }
   },
   {
     type: "function",
     function: {
-      name: "store_business_phone",
-      description: "Store business phone number after confirmation",
+      name: "store_business_details",
+      description: "Store business hours, services, and website after confirmation",
       parameters: {
         type: "object",
         properties: {
-          phone_number: { type: "string", description: "Business phone number" }
-        },
-        required: ["phone_number"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "store_business_email",
-      description: "Store business email address after confirmation",
-      parameters: {
-        type: "object",
-        properties: {
-          contact_email: { type: "string", description: "Business email address" }
-        },
-        required: ["contact_email"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "store_business_hours",
-      description: "Store business operating hours after confirmation",
-      parameters: {
-        type: "object",
-        properties: {
-          opening_hours: { type: "string", description: "Business operating hours" }
-        },
-        required: ["opening_hours"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "store_business_services",
-      description: "Store list of business services after confirmation",
-      parameters: {
-        type: "object",
-        properties: {
+          opening_hours: { type: "string", description: "Business operating hours" },
           services: { 
             type: "array", 
             items: { type: "string" },
             description: "List of services offered by the business" 
-          }
-        },
-        required: ["services"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "store_business_website",
-      description: "Store business website URL after confirmation",
-      parameters: {
-        type: "object",
-        properties: {
+          },
           website: { type: "string", description: "Business website URL" }
-        },
-        required: ["website"]
+        }
       }
     }
   },
   {
     type: "function",
     function: {
-      name: "store_ai_use_cases",
+      name: "store_ai_preferences",
       description: "Store selected AI functionality preferences after confirmation",
       parameters: {
         type: "object",
@@ -325,36 +238,32 @@ async function callSearchModel(query: string) {
   return data.choices[0].message.content
 }
 
-async function getCurrentProfileData(supabase: any, userId: string): Promise<OnboardingData> {
+async function getCurrentProfileData(supabase: any, userId: string) {
   try {
     const { data, error } = await supabase
       .from('user_profiles')
-      .select('onboarding_data')
+      .select('*')
       .eq('id', userId)
       .single()
 
     if (error) {
       console.error('Error fetching profile:', error)
-      return {}
+      return null
     }
 
-    return data?.onboarding_data || {}
+    return data
   } catch (err) {
     console.error('Profile fetch error:', err)
-    return {}
+    return null
   }
 }
 
-async function updateUserProfile(supabase: any, userId: string, updates: Partial<OnboardingData>) {
+async function updateUserProfile(supabase: any, userId: string, updates: any) {
   try {
-    // Get current data first
-    const currentData = await getCurrentProfileData(supabase, userId)
-    const mergedData = { ...currentData, ...updates }
-
     const { data, error } = await supabase
       .from('user_profiles')
       .update({
-        onboarding_data: mergedData,
+        ...updates,
         updated_at: new Date().toISOString()
       })
       .eq('id', userId)
@@ -372,52 +281,43 @@ async function updateUserProfile(supabase: any, userId: string, updates: Partial
   }
 }
 
-async function saveConversationHistory(supabase: any, userId: string, threadId: string, messages: ChatMessage[]) {
+async function updateOnboardingData(supabase: any, userId: string, updates: Partial<OnboardingData>) {
   try {
-    const updates = {
-      thread_id: threadId,
-      conversation_history: messages
-    }
+    // Get current onboarding data
+    const currentProfile = await getCurrentProfileData(supabase, userId)
+    const currentOnboardingData = currentProfile?.onboarding_data || {}
     
-    return await updateUserProfile(supabase, userId, updates)
-  } catch (err) {
-    console.error('Error saving conversation:', err)
-    return { success: false, error: 'Failed to save conversation' }
-  }
-}
+    // Merge with new data
+    const mergedOnboardingData = { ...currentOnboardingData, ...updates }
 
-async function restoreConversationHistory(supabase: any, threadId: string): Promise<{ messages: ChatMessage[], userId?: string }> {
-  try {
     const { data, error } = await supabase
       .from('user_profiles')
-      .select('onboarding_data, id')
-      .contains('onboarding_data', { thread_id: threadId })
-      .single()
+      .update({
+        onboarding_data: mergedOnboardingData,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId)
+      .select()
 
-    if (error || !data) {
-      console.error('Error restoring conversation:', error)
-      return { messages: [] }
+    if (error) {
+      console.error('Onboarding data update error:', error)
+      return { success: false, error: error.message }
     }
 
-    const conversationHistory = data.onboarding_data?.conversation_history || []
-    return { 
-      messages: conversationHistory,
-      userId: data.id
-    }
+    return { success: true, data }
   } catch (err) {
-    console.error('Conversation restore error:', err)
-    return { messages: [] }
+    console.error('Onboarding data update error:', err)
+    return { success: false, error: 'Failed to update onboarding data' }
   }
 }
 
-async function completeUserOnboarding(supabase: any, userId: string, finalData: OnboardingData) {
+async function completeUserOnboarding(supabase: any, userId: string) {
   try {
     const { data, error } = await supabase
       .from('user_profiles')
       .update({
         onboarding_completed: true,
         onboarding_step: -1,
-        onboarding_data: finalData,
         updated_at: new Date().toISOString()
       })
       .eq('id', userId)
@@ -440,95 +340,98 @@ async function handleToolCall(toolCall: any, supabase: any, userId: string) {
   const parsedArgs = JSON.parse(args)
 
   let toolResult = ''
-  let updates: Partial<OnboardingData> = {}
 
   try {
     switch (name) {
       case 'store_user_name':
-        updates.user_name = parsedArgs.user_name
-        await updateUserProfile(supabase, userId, updates)
-        toolResult = `Stored user name: ${parsedArgs.user_name}`
+        await updateUserProfile(supabase, userId, { 
+          full_name: parsedArgs.user_name 
+        })
+        await updateOnboardingData(supabase, userId, { 
+          user_name: parsedArgs.user_name 
+        })
+        toolResult = `✅ Stored your name: ${parsedArgs.user_name}`
         break
 
-      case 'store_business_name':
-        updates.business_name = parsedArgs.business_name
-        await updateUserProfile(supabase, userId, updates)
-        toolResult = `Stored business name: ${parsedArgs.business_name}`
+      case 'store_business_info':
+        await updateUserProfile(supabase, userId, { 
+          business_name: parsedArgs.business_name,
+          business_type: parsedArgs.business_type
+        })
+        await updateOnboardingData(supabase, userId, { 
+          business_name: parsedArgs.business_name,
+          business_type: parsedArgs.business_type
+        })
+        toolResult = `✅ Stored business info: ${parsedArgs.business_name} (${parsedArgs.business_type})`
         break
 
-      case 'store_business_type':
-        updates.business_type = parsedArgs.business_type
-        await updateUserProfile(supabase, userId, updates)
-        toolResult = `Stored business type: ${parsedArgs.business_type}`
+      case 'store_contact_info':
+        const contactUpdates: any = {}
+        const onboardingContactUpdates: any = {}
+        
+        if (parsedArgs.phone_number) {
+          contactUpdates.phone_number = parsedArgs.phone_number
+          onboardingContactUpdates.phone_number = parsedArgs.phone_number
+        }
+        if (parsedArgs.email) {
+          onboardingContactUpdates.contact_email = parsedArgs.email
+        }
+        if (parsedArgs.full_address) {
+          onboardingContactUpdates.full_address = parsedArgs.full_address
+        }
+
+        if (Object.keys(contactUpdates).length > 0) {
+          await updateUserProfile(supabase, userId, contactUpdates)
+        }
+        await updateOnboardingData(supabase, userId, onboardingContactUpdates)
+        
+        const contactItems = []
+        if (parsedArgs.phone_number) contactItems.push(`phone: ${parsedArgs.phone_number}`)
+        if (parsedArgs.email) contactItems.push(`email: ${parsedArgs.email}`)
+        if (parsedArgs.full_address) contactItems.push(`address: ${parsedArgs.full_address}`)
+        
+        toolResult = `✅ Stored contact info: ${contactItems.join(', ')}`
         break
 
-      case 'store_business_city':
-        updates.business_city = parsedArgs.business_city
-        await updateUserProfile(supabase, userId, updates)
-        toolResult = `Stored business location: ${parsedArgs.business_city}`
+      case 'store_business_details':
+        await updateOnboardingData(supabase, userId, {
+          opening_hours: parsedArgs.opening_hours,
+          services: parsedArgs.services,
+          website: parsedArgs.website
+        })
+        
+        const detailItems = []
+        if (parsedArgs.opening_hours) detailItems.push(`hours: ${parsedArgs.opening_hours}`)
+        if (parsedArgs.services) detailItems.push(`services: ${parsedArgs.services.join(', ')}`)
+        if (parsedArgs.website) detailItems.push(`website: ${parsedArgs.website}`)
+        
+        toolResult = `✅ Stored business details: ${detailItems.join(', ')}`
         break
 
-      case 'store_business_address':
-        updates.full_address = parsedArgs.full_address
-        await updateUserProfile(supabase, userId, updates)
-        toolResult = `Stored business address: ${parsedArgs.full_address}`
-        break
-
-      case 'store_business_phone':
-        updates.phone_number = parsedArgs.phone_number
-        await updateUserProfile(supabase, userId, updates)
-        toolResult = `Stored phone number: ${parsedArgs.phone_number}`
-        break
-
-      case 'store_business_email':
-        updates.contact_email = parsedArgs.contact_email
-        await updateUserProfile(supabase, userId, updates)
-        toolResult = `Stored email address: ${parsedArgs.contact_email}`
-        break
-
-      case 'store_business_hours':
-        updates.opening_hours = parsedArgs.opening_hours
-        await updateUserProfile(supabase, userId, updates)
-        toolResult = `Stored business hours: ${parsedArgs.opening_hours}`
-        break
-
-      case 'store_business_services':
-        updates.services = parsedArgs.services
-        await updateUserProfile(supabase, userId, updates)
-        toolResult = `Stored services: ${parsedArgs.services.join(', ')}`
-        break
-
-      case 'store_business_website':
-        updates.website = parsedArgs.website
-        await updateUserProfile(supabase, userId, updates)
-        toolResult = `Stored website: ${parsedArgs.website}`
-        break
-
-      case 'store_ai_use_cases':
-        updates.ai_use_cases = parsedArgs.ai_use_cases
-        await updateUserProfile(supabase, userId, updates)
-        toolResult = `Stored AI preferences: ${parsedArgs.ai_use_cases.join(', ')}`
+      case 'store_ai_preferences':
+        await updateOnboardingData(supabase, userId, { 
+          ai_use_cases: parsedArgs.ai_use_cases 
+        })
+        toolResult = `✅ Stored AI preferences: ${parsedArgs.ai_use_cases.join(', ')}`
         break
 
       case 'web_search_tool':
         const searchQuery = `Find detailed information about "${parsedArgs.business_name}" ${parsedArgs.business_type} business in ${parsedArgs.city}. Include: full address, phone number, email, website, operating hours, and services offered.`
         const searchResults = await callSearchModel(searchQuery)
-        toolResult = `Found business information: ${searchResults}`
+        toolResult = `🔍 Found business information: ${searchResults}`
         break
 
       case 'complete_onboarding':
-        const currentData = await getCurrentProfileData(supabase, userId)
-        const finalData = { ...currentData, onboarding_completed: true }
-        await completeUserOnboarding(supabase, userId, finalData)
-        toolResult = `Onboarding completed successfully. Summary: ${parsedArgs.summary}`
+        await completeUserOnboarding(supabase, userId)
+        toolResult = `🎉 Onboarding completed successfully! Your AI phone assistant is now ready to help your business.`
         break
 
       default:
-        toolResult = `Unknown tool: ${name}`
+        toolResult = `❌ Unknown tool: ${name}`
     }
   } catch (error) {
     console.error(`Tool execution error for ${name}:`, error)
-    toolResult = `Error executing ${name}: ${error.message}`
+    toolResult = `❌ Error executing ${name}: ${error.message}`
   }
 
   return toolResult
@@ -628,7 +531,7 @@ async function processStreamWithToolCalls(
 
                 // Send tool completion notification to frontend
                 const toolChunk = `data: ${JSON.stringify({ 
-                  tool_result: `✅ ${toolCall.function.name} completed`,
+                  tool_result: toolResult,
                   tool_name: toolCall.function.name 
                 })}\n\n`
                 controller.enqueue(new TextEncoder().encode(toolChunk))
@@ -705,23 +608,16 @@ Deno.serve(async (req: Request) => {
           )
         }
 
-        const saveResult = await updateUserProfile(supabase, userId, { thread_id: threadId })
+        const saveResult = await updateOnboardingData(supabase, userId, { thread_id: threadId })
         return new Response(
           JSON.stringify({ success: saveResult.success }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
 
       case 'restore_conversation':
-        if (!threadId) {
-          return new Response(
-            JSON.stringify({ error: 'Thread ID is required' }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          )
-        }
-
-        const { messages: restoredMessages } = await restoreConversationHistory(supabase, threadId)
+        // Since we removed conversation history, just return empty messages
         return new Response(
-          JSON.stringify({ messages: restoredMessages }),
+          JSON.stringify({ messages: [] }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
 
@@ -732,9 +628,6 @@ Deno.serve(async (req: Request) => {
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           )
         }
-
-        // Save conversation history
-        await saveConversationHistory(supabase, userId, threadId, messages)
 
         // Prepare messages with system prompt
         const fullMessages: ChatMessage[] = [
@@ -759,9 +652,6 @@ Deno.serve(async (req: Request) => {
                 userId,
                 conversationMessages
               )
-
-              // Save the final conversation state
-              await saveConversationHistory(supabase, userId, threadId, conversationMessages)
 
             } catch (error) {
               console.error('Stream error:', error)
