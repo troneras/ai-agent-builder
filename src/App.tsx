@@ -7,7 +7,6 @@ import TestimonialsSection from './components/TestimonialsSection';
 import PricingSection from './components/PricingSection';
 import Footer from './components/Footer';
 import AuthForm from './components/AuthForm';
-import AuthCallback from './components/AuthCallback';
 import OnboardingChat from './components/OnboardingChat';
 import ParticleBackground from './components/ParticleBackground';
 import { useAuth } from './hooks/useAuth';
@@ -17,19 +16,7 @@ function App() {
   const [showAuth, setShowAuth] = useState(false);
   const [authMode, setAuthMode] = useState<'register' | 'login' | 'forgot-password'>('register');
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [showAuthCallback, setShowAuthCallback] = useState(false);
   const { user, loading } = useAuth();
-
-  // Check for auth callback on mount
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const accessToken = urlParams.get('access_token');
-    const type = urlParams.get('type');
-    
-    if (accessToken || type === 'recovery') {
-      setShowAuthCallback(true);
-    }
-  }, []);
 
   const handleStartBuilding = () => {
     if (user) {
@@ -47,7 +34,6 @@ function App() {
 
   const handleAuthComplete = () => {
     setShowAuth(false);
-    setShowAuthCallback(false);
     setShowOnboarding(true);
   };
 
@@ -93,10 +79,6 @@ function App() {
       </main>
 
       <Footer />
-
-      {showAuthCallback && (
-        <AuthCallback onComplete={handleAuthComplete} />
-      )}
 
       {showAuth && (
         <AuthForm 

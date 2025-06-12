@@ -11,20 +11,39 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: true
+    detectSessionInUrl: false // Disable URL detection since we're using OTP
   }
 })
 
 // Auth helper functions
 export const authHelpers = {
-  // Sign up with email confirmation
+  // Sign up with OTP verification
   signUp: async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`
+        emailRedirectTo: undefined // No redirect needed for OTP
       }
+    })
+    return { data, error }
+  },
+
+  // Verify OTP for email confirmation
+  verifyOtp: async (email: string, token: string, type: 'signup' | 'recovery' = 'signup') => {
+    const { data, error } = await supabase.auth.verifyOtp({
+      email,
+      token,
+      type
+    })
+    return { data, error }
+  },
+
+  // Resend OTP
+  resendOtp: async (email: string, type: 'signup' | 'recovery' = 'signup') => {
+    const { data, error } = await supabase.auth.resend({
+      type,
+      email
     })
     return { data, error }
   },
@@ -44,10 +63,10 @@ export const authHelpers = {
     return { error }
   },
 
-  // Reset password
+  // Reset password with OTP
   resetPassword: async (email: string) => {
     const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/reset-password`
+      redirectTo: undefined // No redirect needed for OTP
     })
     return { data, error }
   },
