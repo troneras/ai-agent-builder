@@ -311,8 +311,6 @@ async function callSearchModel(query: string) {
           content: query
         }
       ],
-      temperature: 0.3,
-      max_tokens: 800
     }),
   })
 
