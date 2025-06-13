@@ -8,9 +8,10 @@ import Logo from './Logo';
 
 interface OnboardingChatProps {
   onClose: () => void;
+  locale?: string; // Add locale support for future localization
 }
 
-const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
+const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose, locale = 'en' }) => {
   const { user } = useAuth();
   const { onboarding, refetch: refetchOnboarding } = useOnboarding(user);
 
@@ -80,7 +81,8 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
         },
         body: JSON.stringify({
           action: 'get_conversation',
-          userId: user.id
+          userId: user.id,
+          locale: locale
         })
       });
 
@@ -235,7 +237,8 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
         body: JSON.stringify({
           action: 'send_message',
           message: userMessage,
-          userId: user.id
+          userId: user.id,
+          locale: locale
         })
       });
 

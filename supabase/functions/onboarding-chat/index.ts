@@ -31,12 +31,23 @@ Use the available tools to store information as you collect it.
 Be friendly and professional, using emojis occasionally to make the conversation engaging.
 Format your responses using markdown for better readability.` as const;
 
-const WELCOME_MESSAGE =
-  `👋 **Welcome to your AI-powered phone assistant setup!**
+// Localized welcome messages
+const WELCOME_MESSAGES = {
+  en: `👋 **Welcome to your AI-powered phone assistant setup!**
 
 I'm here to help you get your business phone system configured perfectly. I'll gather some information about you and your business to customize everything just right.
 
-Let's start with the basics - **what's your name?**` as const;
+Let's start with the basics - **what's your name?**`,
+  // Future localization support - add more languages here
+  // es: `👋 **¡Bienvenido a la configuración de tu asistente telefónico con IA!** ...`,
+  // fr: `👋 **Bienvenue dans la configuration de votre assistant téléphonique IA!** ...`,
+} as const;
+
+// Function to get localized welcome message
+function getWelcomeMessage(locale: string = "en"): string {
+  return WELCOME_MESSAGES[locale as keyof typeof WELCOME_MESSAGES] ||
+    WELCOME_MESSAGES.en;
+}
 
 const AI_USE_CASES = [
   "appointment_scheduling",
@@ -52,6 +63,7 @@ interface RequestBody {
   action: "get_conversation" | "send_message";
   userId?: string;
   message?: string;
+  locale?: string; // Add locale support for future localization
 }
 
 interface ToolResult {
@@ -461,7 +473,7 @@ Deno.serve(async (req: Request) => {
       return createErrorResponse("Invalid JSON in request body");
     }
 
-    const { action, userId, message } = body;
+    const { action, userId, message, locale } = body;
 
     if (!userId) {
       return createErrorResponse("User ID is required");
@@ -497,14 +509,31 @@ Deno.serve(async (req: Request) => {
 
         finalConversation = newConversation as Conversation;
 
+        // Initialize onboarding record if it doesn't exist
+        const { data: existingOnboarding } = await supabaseClient
+          .from("onboarding")
+          .select("id")
+          .eq("user_id", userId)
+          .single();
+
+        if (!existingOnboarding) {
+          await supabaseClient
+            .from("onboarding")
+            .insert({
+              user_id: userId,
+              conversation_id: finalConversation.id,
+              current_step: 1,
+              started_at: new Date().toISOString(),
+            });
+        }
+
         // Add welcome message
         await supabaseClient
           .from("messages")
           .insert({
             conversation_id: finalConversation.id,
-            sender: "assistant",
             role: "assistant",
-            content: WELCOME_MESSAGE,
+            content: getWelcomeMessage(locale),
             message_order: 1,
           });
       } else if (convError) {
