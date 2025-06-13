@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS messages (
   tool_name text, -- For tool messages
   tool_call_id text, -- For OpenAI tool call tracking
   metadata jsonb DEFAULT '{}', -- For additional data like tool results
-  created_at timestamptz DEFAULT now()
+  created_at timestamptz DEFAULT now(),
+  tool_calls jsonb
 );
 
 -- Create onboarding table
@@ -188,38 +189,6 @@ CREATE TRIGGER update_onboarding_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
--- Update the handle_new_user function to create onboarding record
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
-DECLARE
-  conversation_id uuid;
-BEGIN
-  -- Create user profile
-  INSERT INTO public.user_profiles (id, email)
-  VALUES (NEW.id, NEW.email);
-  
-  -- Create onboarding conversation
-  INSERT INTO public.conversations (user_id, title, type)
-  VALUES (NEW.id, 'Onboarding Setup', 'onboarding')
-  RETURNING id INTO conversation_id;
-  
-  -- Create onboarding record
-  INSERT INTO public.onboarding (user_id, conversation_id)
-  VALUES (NEW.id, conversation_id);
-  
-  -- Add initial assistant message
-  INSERT INTO public.messages (conversation_id, sender, role, content)
-  VALUES (
-    conversation_id,
-    'assistant',
-    'assistant',
-    '👋 Hi! I''m your Cutcall setup assistant. I''m here to help you get your AI phone assistant ready for your business. Let''s start with something simple - what''s your name?'
-  );
-  
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- Enable real-time on messages table
 ALTER PUBLICATION supabase_realtime ADD TABLE messages;
 
@@ -231,53 +200,5 @@ CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
 CREATE INDEX IF NOT EXISTS idx_onboarding_user_id ON onboarding(user_id);
 CREATE INDEX IF NOT EXISTS idx_onboarding_completed ON onboarding(completed);
 
--- Create function to get or create onboarding conversation
-CREATE OR REPLACE FUNCTION get_or_create_onboarding_conversation(p_user_id uuid)
-RETURNS uuid AS $$
-DECLARE
-  conversation_id uuid;
-  onboarding_record record;
-BEGIN
-  -- Get existing onboarding record
-  SELECT * INTO onboarding_record
-  FROM onboarding
-  WHERE user_id = p_user_id;
-  
-  -- If onboarding exists and has conversation, return it
-  IF onboarding_record.conversation_id IS NOT NULL THEN
-    RETURN onboarding_record.conversation_id;
-  END IF;
-  
-  -- If onboarding exists but no conversation, create one
-  IF onboarding_record.id IS NOT NULL THEN
-    INSERT INTO conversations (user_id, title, type)
-    VALUES (p_user_id, 'Onboarding Setup', 'onboarding')
-    RETURNING id INTO conversation_id;
-    
-    UPDATE onboarding 
-    SET conversation_id = conversation_id
-    WHERE user_id = p_user_id;
-    
-    RETURN conversation_id;
-  END IF;
-  
-  -- If no onboarding record exists, create everything
-  INSERT INTO conversations (user_id, title, type)
-  VALUES (p_user_id, 'Onboarding Setup', 'onboarding')
-  RETURNING id INTO conversation_id;
-  
-  INSERT INTO onboarding (user_id, conversation_id)
-  VALUES (p_user_id, conversation_id);
-  
-  -- Add initial assistant message
-  INSERT INTO messages (conversation_id, sender, role, content)
-  VALUES (
-    conversation_id,
-    'assistant',
-    'assistant',
-    '👋 Hi! I''m your Cutcall setup assistant. I''m here to help you get your AI phone assistant ready for your business. Let''s start with something simple - what''s your name?'
-  );
-  
-  RETURN conversation_id;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- Add tool_calls column to messages for OpenAI function calling support
+ALTER TABLE IF EXISTS messages ADD COLUMN IF NOT EXISTS tool_calls jsonb;

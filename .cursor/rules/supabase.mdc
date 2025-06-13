@@ -1,0 +1,60 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+This is a Supabase project with local development environment synced to cloud
+
+Development Workflow Commands
+Starting/Stopping Local Environment
+bash# Start local Supabase
+supabase start
+
+# Stop local Supabase
+supabase stop
+
+# Check status
+supabase status
+Database Migrations
+bash# Create new migration
+supabase migration new [migration_name]
+
+# Apply migrations locally (resets local DB)
+supabase db reset
+
+# Push migrations to cloud
+supabase db push
+# Pull remote schema changes
+supabase db pull
+Edge Functions
+bash# Create new function
+supabase functions new [function_name]
+
+# Serve functions locally for testing
+supabase functions serve
+
+# Deploy function to cloud
+supabase functions deploy [function_name]
+
+# Deploy all functions
+supabase functions deploy
+Development Best Practices
+
+Always test migrations locally with supabase db reset before pushing
+Use supabase logs to debug issues
+Database changes should be made through migration files, not direct SQL
+Test Edge Functions locally before deploying
+Local environment mirrors cloud configuration
+
+File Structure
+
+Migrations: supabase/migrations/
+Functions: supabase/functions/
+Config: supabase/config.toml
+Seeds: supabase/seed.sql
+
+Troubleshooting
+
+If local DB gets out of sync: supabase db pull then supabase db reset
+For function debugging: use --debug flag with supabase functions serve
+Check logs with supabase logs for any service issues

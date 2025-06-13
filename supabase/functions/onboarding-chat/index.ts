@@ -3,7 +3,7 @@
 
   This function handles the onboarding chat conversation flow:
   1. Creates or retrieves existing conversations
-  2. Processes user messages and generates AI responses
+  2. Processes user messages and generates AI responses using GPT-4-mini
   3. Manages conversation state and message history
   4. Integrates with various tools for data collection
 
@@ -13,441 +13,773 @@
   - Validates user ownership of conversations
 */
 
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { OpenAI } from "npm:openai@4.28.0";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+// Constants
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+} as const;
 
+const SYSTEM_PROMPT =
+  `You are an AI assistant helping users set up their business phone system. 
+You need to collect information about their business and preferences.
+Use the available tools to store information as you collect it.
+Be friendly and professional, using emojis occasionally to make the conversation engaging.
+Format your responses using markdown for better readability.` as const;
+
+const WELCOME_MESSAGE =
+  `👋 **Welcome to your AI-powered phone assistant setup!**
+
+I'm here to help you get your business phone system configured perfectly. I'll gather some information about you and your business to customize everything just right.
+
+Let's start with the basics - **what's your name?**` as const;
+
+const AI_USE_CASES = [
+  "appointment_scheduling",
+  "order_taking",
+  "customer_support",
+  "lead_qualification",
+  "message_taking",
+  "information_sharing",
+] as const;
+
+// Type definitions
 interface RequestBody {
-  action: 'get_conversation' | 'send_message';
+  action: "get_conversation" | "send_message";
   userId?: string;
   message?: string;
 }
 
-Deno.serve(async (req: Request) => {
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+interface ToolResult {
+  success: boolean;
+  [key: string]: unknown;
+}
+
+interface DatabaseMessage {
+  id: string;
+  conversation_id: string;
+  role: "user" | "assistant" | "tool" | "system";
+  content: string;
+  message_order: number;
+  tool_calls?: unknown;
+  tool_call_id?: string;
+  tool_name?: string;
+  tool_result?: ToolResult;
+  tool_args?: unknown;
+  token_count?: number;
+  created_at: string;
+  [key: string]: unknown;
+}
+
+interface Conversation {
+  id: string;
+  user_id: string;
+  title: string;
+  type: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface OnboardingData {
+  user_id: string;
+  user_name?: string;
+  business_name?: string;
+  business_type?: string;
+  business_city?: string;
+  phone_number?: string;
+  opening_hours?: string;
+  services?: string[];
+  ai_use_cases?: string[];
+  current_step?: number;
+  completed?: boolean;
+  completed_at?: string;
+}
+
+interface ToolCallFunction {
+  name: string;
+  arguments: string;
+}
+
+interface ToolCallItem {
+  id: string;
+  function: ToolCallFunction;
+}
+
+// Tool definitions for GPT-4-mini
+const tools = [
+  {
+    type: "function",
+    function: {
+      name: "store_user_info",
+      description: "Store user information in the onboarding record",
+      parameters: {
+        type: "object",
+        properties: {
+          user_name: {
+            type: "string",
+            description: "The user's full name",
+          },
+        },
+        required: ["user_name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "store_business_info",
+      description: "Store business information in the onboarding record",
+      parameters: {
+        type: "object",
+        properties: {
+          business_name: {
+            type: "string",
+            description: "The name of the business",
+          },
+          business_type: {
+            type: "string",
+            description:
+              "The type of business (e.g., restaurant, retail, professional services)",
+          },
+        },
+        required: ["business_name", "business_type"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "store_contact_info",
+      description: "Store contact information in the onboarding record",
+      parameters: {
+        type: "object",
+        properties: {
+          business_city: {
+            type: "string",
+            description: "The city where the business is located",
+          },
+          phone_number: {
+            type: "string",
+            description: "The business phone number",
+          },
+        },
+        required: ["business_city", "phone_number"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "store_business_details",
+      description: "Store business details in the onboarding record",
+      parameters: {
+        type: "object",
+        properties: {
+          opening_hours: {
+            type: "string",
+            description: "The business operating hours",
+          },
+          services: {
+            type: "array",
+            items: {
+              type: "string",
+            },
+            description: "List of services offered by the business",
+          },
+        },
+        required: ["opening_hours", "services"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "store_ai_preferences",
+      description: "Store AI preferences and complete onboarding",
+      parameters: {
+        type: "object",
+        properties: {
+          ai_use_cases: {
+            type: "array",
+            items: {
+              type: "string",
+              enum: AI_USE_CASES,
+            },
+            description: "List of AI features the user wants to enable",
+          },
+        },
+        required: ["ai_use_cases"],
+      },
+    },
+  },
+] as const;
+
+// Utility functions
+function createErrorResponse(message: string, status = 400): Response {
+  return new Response(
+    JSON.stringify({ error: message }),
+    {
+      status,
+      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+    },
+  );
+}
+
+function createSuccessResponse(data: unknown): Response {
+  return new Response(
+    JSON.stringify(data),
+    {
+      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+    },
+  );
+}
+
+// Helper to build conversation history for OpenAI
+function buildConversationHistory(messages: DatabaseMessage[]) {
+  const history = [];
+  for (const msg of messages) {
+    if (msg.role === "user") {
+      history.push({
+        role: "user",
+        content: msg.content,
+      });
+    } else if (msg.role === "assistant") {
+      if (msg.tool_calls) {
+        history.push({
+          role: "assistant",
+          content: msg.content || null,
+          tool_calls: msg.tool_calls,
+        });
+      } else {
+        history.push({
+          role: "assistant",
+          content: msg.content,
+        });
+      }
+    } else if (msg.role === "tool") {
+      history.push({
+        role: "tool",
+        tool_call_id: msg.tool_call_id,
+        name: msg.tool_name,
+        content: msg.content,
+      });
+    }
+  }
+  return history;
+}
+
+// Helper to get the next message order for a conversation
+async function getNextMessageOrder(
+  supabaseClient: SupabaseClient,
+  conversationId: string,
+): Promise<number> {
+  const { data: lastMsg } = await supabaseClient
+    .from("messages")
+    .select("message_order")
+    .eq("conversation_id", conversationId)
+    .order("message_order", { ascending: false })
+    .limit(1)
+    .single();
+
+  return lastMsg && typeof lastMsg.message_order === "number"
+    ? lastMsg.message_order + 1
+    : 1;
+}
+
+// Helper to safely parse JSON
+function safeJsonParse(jsonString: string): unknown {
+  try {
+    return JSON.parse(jsonString);
+  } catch {
+    return null;
+  }
+}
+
+// Tool execution functions
+async function executeToolCall(
+  supabaseClient: SupabaseClient,
+  toolCall: ToolCallItem,
+  userId: string,
+): Promise<ToolResult> {
+  const { name, arguments: args } = toolCall.function;
+  const parsedArgs = safeJsonParse(args);
+
+  if (!parsedArgs || typeof parsedArgs !== "object") {
+    return { success: false, error: "Invalid tool arguments" };
   }
 
   try {
-    // Initialize Supabase client
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
+    switch (name) {
+      case "store_user_info": {
+        const { user_name } = parsedArgs as { user_name: string };
+        await supabaseClient
+          .from("onboarding")
+          .upsert({
+            user_id: userId,
+            user_name,
+            current_step: 2,
+          }, { onConflict: "user_id" });
+        return { success: true, user_name };
+      }
 
-    // Parse request body
-    const body: RequestBody = await req.json();
+      case "store_business_info": {
+        const { business_name, business_type } = parsedArgs as {
+          business_name: string;
+          business_type: string;
+        };
+        await supabaseClient
+          .from("onboarding")
+          .upsert({
+            user_id: userId,
+            business_name,
+            business_type,
+            current_step: 3,
+          }, { onConflict: "user_id" });
+        return { success: true, business_name, business_type };
+      }
+
+      case "store_contact_info": {
+        const { business_city, phone_number } = parsedArgs as {
+          business_city: string;
+          phone_number: string;
+        };
+        await supabaseClient
+          .from("onboarding")
+          .upsert({
+            user_id: userId,
+            business_city,
+            phone_number,
+            current_step: 4,
+          }, { onConflict: "user_id" });
+        return { success: true, business_city, phone_number };
+      }
+
+      case "store_business_details": {
+        const { opening_hours, services } = parsedArgs as {
+          opening_hours: string;
+          services: string[];
+        };
+        await supabaseClient
+          .from("onboarding")
+          .upsert({
+            user_id: userId,
+            opening_hours,
+            services,
+            current_step: 5,
+          }, { onConflict: "user_id" });
+        return { success: true, opening_hours, services };
+      }
+
+      case "store_ai_preferences": {
+        const { ai_use_cases } = parsedArgs as { ai_use_cases: string[] };
+
+        // Get current onboarding data for user profile update
+        const { data: currentOnboarding } = await supabaseClient
+          .from("onboarding")
+          .select("*")
+          .eq("user_id", userId)
+          .single();
+
+        await supabaseClient
+          .from("onboarding")
+          .upsert({
+            user_id: userId,
+            ai_use_cases,
+            completed: true,
+            completed_at: new Date().toISOString(),
+          }, { onConflict: "user_id" });
+
+        // Update user profile if we have onboarding data
+        if (currentOnboarding) {
+          const onboardingData = currentOnboarding as OnboardingData;
+          await supabaseClient
+            .from("user_profiles")
+            .update({
+              full_name: onboardingData.user_name,
+              business_name: onboardingData.business_name,
+              business_type: onboardingData.business_type,
+              phone_number: onboardingData.phone_number,
+              business_data: {
+                city: onboardingData.business_city,
+                hours: onboardingData.opening_hours,
+                services: onboardingData.services,
+                ai_use_cases,
+              },
+            })
+            .eq("id", userId);
+        }
+
+        return {
+          success: true,
+          ai_use_cases,
+          onboarding_completed: true,
+        };
+      }
+
+      default:
+        return { success: false, error: `Unknown tool: ${name}` };
+    }
+  } catch (error) {
+    console.error(`Error executing tool ${name}:`, error);
+    return {
+      success: false,
+      error: `Failed to execute ${name}: ${(error as Error).message}`,
+    };
+  }
+}
+
+// Main handler
+Deno.serve(async (req: Request) => {
+  // Handle CORS preflight requests
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: CORS_HEADERS });
+  }
+
+  try {
+    // Validate environment variables
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const openaiKey = Deno.env.get("OPENAI_API_KEY");
+
+    if (!supabaseUrl || !supabaseKey || !openaiKey) {
+      return createErrorResponse("Missing required environment variables", 500);
+    }
+
+    // Initialize clients
+    const supabaseClient = createClient(supabaseUrl, supabaseKey);
+    const openai = new OpenAI({ apiKey: openaiKey });
+
+    // Parse and validate request body
+    let body: RequestBody;
+    try {
+      body = await req.json();
+    } catch {
+      return createErrorResponse("Invalid JSON in request body");
+    }
+
     const { action, userId, message } = body;
 
     if (!userId) {
-      return new Response(
-        JSON.stringify({ error: 'User ID is required' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
+      return createErrorResponse("User ID is required");
     }
 
-    if (action === 'get_conversation') {
+    if (action === "get_conversation") {
       // Get or create onboarding conversation
-      let { data: conversation, error: convError } = await supabaseClient
-        .from('conversations')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('type', 'onboarding')
+      const { data: conversation, error: convError } = await supabaseClient
+        .from("conversations")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("type", "onboarding")
         .single();
 
-      if (convError && convError.code === 'PGRST116') {
+      let finalConversation: Conversation;
+
+      if (convError && convError.code === "PGRST116") {
         // No conversation exists, create one
-        const { data: newConversation, error: createError } = await supabaseClient
-          .from('conversations')
-          .insert({
-            user_id: userId,
-            title: 'Onboarding Setup',
-            type: 'onboarding'
-          })
-          .select()
-          .single();
+        const { data: newConversation, error: createError } =
+          await supabaseClient
+            .from("conversations")
+            .insert({
+              user_id: userId,
+              title: "Onboarding Setup",
+              type: "onboarding",
+            })
+            .select()
+            .single();
 
         if (createError) {
           throw createError;
         }
 
-        conversation = newConversation;
+        finalConversation = newConversation as Conversation;
 
         // Add welcome message
         await supabaseClient
-          .from('messages')
+          .from("messages")
           .insert({
-            conversation_id: conversation.id,
-            sender: 'assistant',
-            role: 'assistant',
-            content: `👋 **Welcome to your AI-powered phone assistant setup!**
-
-I'm here to help you get your business phone system configured perfectly. I'll gather some information about you and your business to customize everything just right.
-
-Let's start with the basics - **what's your name?**`
+            conversation_id: finalConversation.id,
+            sender: "assistant",
+            role: "assistant",
+            content: WELCOME_MESSAGE,
+            message_order: 1,
           });
       } else if (convError) {
         throw convError;
+      } else {
+        finalConversation = conversation as Conversation;
       }
 
       // Get messages for this conversation
       const { data: messages, error: messagesError } = await supabaseClient
-        .from('messages')
-        .select('*')
-        .eq('conversation_id', conversation.id)
-        .order('created_at', { ascending: true });
+        .from("messages")
+        .select("*")
+        .eq("conversation_id", finalConversation.id)
+        .order("message_order", { ascending: true });
 
       if (messagesError) {
         throw messagesError;
       }
 
-      return new Response(
-        JSON.stringify({
-          conversationId: conversation.id,
-          messages: messages || []
-        }),
-        { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
+      const typedMessages = (messages || []) as DatabaseMessage[];
+      return createSuccessResponse({
+        conversationId: finalConversation.id,
+        messages: typedMessages.sort((a, b) =>
+          (a.message_order ?? 0) - (b.message_order ?? 0)
+        ),
+      });
     }
 
-    if (action === 'send_message') {
-      if (!message) {
-        return new Response(
-          JSON.stringify({ error: 'Message is required' }),
-          { 
-            status: 400, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-          }
-        );
+    if (action === "send_message") {
+      if (!message?.trim()) {
+        return createErrorResponse("Message is required and cannot be empty");
       }
 
       // Get the conversation
       const { data: conversation, error: convError } = await supabaseClient
-        .from('conversations')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('type', 'onboarding')
+        .from("conversations")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("type", "onboarding")
         .single();
 
       if (convError) {
+        if (convError.code === "PGRST116") {
+          return createErrorResponse(
+            "No onboarding conversation found. Please start a conversation first.",
+          );
+        }
         throw convError;
       }
 
+      const typedConversation = conversation as Conversation;
+
       // Save user message
-      const { data: userMessage, error: userMsgError } = await supabaseClient
-        .from('messages')
+      const currentOrder = await getNextMessageOrder(
+        supabaseClient,
+        typedConversation.id,
+      );
+      const { error: userMsgError } = await supabaseClient
+        .from("messages")
         .insert({
-          conversation_id: conversation.id,
-          sender: 'user',
-          role: 'user',
-          content: message
-        })
-        .select()
-        .single();
+          conversation_id: typedConversation.id,
+          role: "user",
+          content: message.trim(),
+          message_order: currentOrder,
+          created_at: new Date().toISOString(),
+        });
 
       if (userMsgError) {
         throw userMsgError;
       }
 
-      // Get current onboarding state
-      const { data: onboarding } = await supabaseClient
-        .from('onboarding')
-        .select('*')
-        .eq('user_id', userId)
-        .single();
+      // Get conversation history
+      const { data: messages } = await supabaseClient
+        .from("messages")
+        .select("*")
+        .eq("conversation_id", typedConversation.id)
+        .order("message_order", { ascending: true });
 
-      // Generate AI response based on current state
-      const aiResponse = await generateAIResponse(message, onboarding, supabaseClient, userId, conversation.id);
+      // Prepare conversation history for GPT
+      const conversationHistory = buildConversationHistory(
+        (messages || []) as DatabaseMessage[],
+      );
 
-      // Save AI response
-      await supabaseClient
-        .from('messages')
-        .insert({
-          conversation_id: conversation.id,
-          sender: 'assistant',
-          role: 'assistant',
-          content: aiResponse
+      // Call GPT-4-mini
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: SYSTEM_PROMPT,
+          },
+          ...conversationHistory,
+        ],
+        tools,
+        tool_choice: "auto",
+      });
+
+      const response = completion.choices[0].message;
+      const toolCalls = (response.tool_calls || []) as ToolCallItem[];
+
+      let nextOrder = currentOrder + 1;
+
+      // Check if the model wanted to call functions
+      if (toolCalls.length > 0) {
+        // Save the assistant message with tool_calls
+        // First, try to insert without tool_calls and tool_args to see if basic insertion works
+        console.log("Attempting to save assistant message with tool_calls:", {
+          conversation_id: typedConversation.id,
+          role: "assistant",
+          content: response.content ?? "",
+          message_order: nextOrder,
+          tool_calls: toolCalls,
         });
 
-      return new Response(
-        JSON.stringify({ success: true }),
-        { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        const { error: assistantMsgError } = await supabaseClient
+          .from("messages")
+          .insert({
+            conversation_id: typedConversation.id,
+            role: "assistant",
+            content: response.content ?? "",
+            tool_calls: toolCalls,
+            message_order: nextOrder,
+            created_at: new Date().toISOString(),
+            token_count: completion.usage?.completion_tokens ?? null,
+          });
+
+        if (assistantMsgError) {
+          console.error(
+            "Error saving assistant message with tool_calls:",
+            assistantMsgError,
+          );
+          console.error(
+            "Full error details:",
+            JSON.stringify(assistantMsgError, null, 2),
+          );
+
+          // Try fallback without tool_calls field if it doesn't exist in schema
+          console.log(
+            "Attempting fallback insertion without tool_calls field...",
+          );
+          const { error: fallbackError } = await supabaseClient
+            .from("messages")
+            .insert({
+              conversation_id: typedConversation.id,
+              role: "assistant",
+              content: response.content ?? "",
+              message_order: nextOrder,
+              created_at: new Date().toISOString(),
+              token_count: completion.usage?.completion_tokens ?? null,
+            });
+
+          if (fallbackError) {
+            console.error("Fallback insertion also failed:", fallbackError);
+            throw assistantMsgError; // Throw original error
+          } else {
+            console.log(
+              "Fallback insertion succeeded - tool_calls field likely doesn't exist in schema",
+            );
+          }
         }
-      );
+
+        nextOrder++;
+
+        // Execute each tool call
+        for (const toolCall of toolCalls) {
+          const toolResult = await executeToolCall(
+            supabaseClient,
+            toolCall,
+            userId,
+          );
+
+          // Save tool result
+          const { error: toolMsgError } = await supabaseClient
+            .from("messages")
+            .insert({
+              conversation_id: typedConversation.id,
+              role: "tool",
+              content: JSON.stringify(toolResult),
+              tool_call_id: toolCall.id,
+              tool_name: toolCall.function.name,
+              tool_result: toolResult,
+              message_order: nextOrder,
+              created_at: new Date().toISOString(),
+            });
+
+          if (toolMsgError) {
+            console.error(
+              `Error saving tool result for ${toolCall.function.name}:`,
+              toolMsgError,
+            );
+            throw toolMsgError;
+          }
+
+          nextOrder++;
+        }
+
+        // Get updated conversation history and make final API call
+        const { data: updatedMessages } = await supabaseClient
+          .from("messages")
+          .select("*")
+          .eq("conversation_id", typedConversation.id)
+          .order("message_order", { ascending: true });
+
+        const updatedConversationHistory = buildConversationHistory(
+          (updatedMessages || []) as DatabaseMessage[],
+        );
+
+        // Make final API call with complete conversation including tool results
+        const finalCompletion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: SYSTEM_PROMPT,
+            },
+            ...updatedConversationHistory,
+          ],
+        });
+
+        const finalResponse = finalCompletion.choices[0].message;
+
+        // Save the final assistant response
+        if (finalResponse.content) {
+          const { error: finalMsgError } = await supabaseClient
+            .from("messages")
+            .insert({
+              conversation_id: typedConversation.id,
+              role: "assistant",
+              content: finalResponse.content,
+              message_order: nextOrder,
+              created_at: new Date().toISOString(),
+              token_count: finalCompletion.usage?.completion_tokens ?? null,
+            });
+
+          if (finalMsgError) {
+            console.error(
+              "Error saving final assistant response:",
+              finalMsgError,
+            );
+            throw finalMsgError;
+          }
+        }
+      } else if (response.content) {
+        // If no tool calls, save the response directly
+        await supabaseClient
+          .from("messages")
+          .insert({
+            conversation_id: typedConversation.id,
+            role: "assistant",
+            content: response.content,
+            message_order: nextOrder,
+            created_at: new Date().toISOString(),
+            token_count: completion.usage?.completion_tokens ?? null,
+          });
+      }
+
+      return createSuccessResponse({ success: true });
     }
 
-    return new Response(
-      JSON.stringify({ error: 'Invalid action' }),
-      { 
-        status: 400, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
-    );
+    return createErrorResponse("Invalid action");
+  } catch (error: unknown) {
+    console.error("Error in onboarding-chat function:", error);
 
-  } catch (error) {
-    console.error('Error in onboarding-chat function:', error);
-    
+    const errorMessage = error instanceof Error
+      ? error.message
+      : "Unknown error occurred";
     return new Response(
-      JSON.stringify({ 
-        error: 'Internal server error',
-        details: error.message 
+      JSON.stringify({
+        error: "Internal server error",
+        details: errorMessage,
       }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
+      {
+        status: 500,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      },
     );
   }
 });
-
-async function generateAIResponse(userMessage: string, onboarding: any, supabaseClient: any, userId: string, conversationId: string): Promise<string> {
-  const message = userMessage.toLowerCase().trim();
-  
-  // Initialize onboarding record if it doesn't exist
-  if (!onboarding) {
-    const { data: newOnboarding, error } = await supabaseClient
-      .from('onboarding')
-      .insert({
-        user_id: userId,
-        conversation_id: conversationId,
-        current_step: 1
-      })
-      .select()
-      .single();
-    
-    if (error) {
-      console.error('Error creating onboarding record:', error);
-    } else {
-      onboarding = newOnboarding;
-    }
-  }
-
-  // Determine current step and generate appropriate response
-  const currentStep = onboarding?.current_step || 1;
-
-  switch (currentStep) {
-    case 1: // Getting user name
-      if (message.length > 1) {
-        // Store user name
-        await supabaseClient
-          .from('onboarding')
-          .update({ 
-            user_name: userMessage,
-            current_step: 2
-          })
-          .eq('user_id', userId);
-
-        return `Nice to meet you, **${userMessage}**! 🎉
-
-Now, let's talk about your business. **What's the name of your business?**`;
-      }
-      return "I'd love to know your name! Could you please tell me what I should call you?";
-
-    case 2: // Getting business name
-      if (message.length > 1) {
-        await supabaseClient
-          .from('onboarding')
-          .update({ 
-            business_name: userMessage,
-            current_step: 3
-          })
-          .eq('user_id', userId);
-
-        return `Great! **${userMessage}** sounds like a wonderful business. 🏢
-
-What type of business is it? For example:
-- Restaurant
-- Retail store  
-- Professional services
-- Healthcare
-- Real estate
-- Or something else?`;
-      }
-      return "What's your business name? This helps me understand how to set up your phone system.";
-
-    case 3: // Getting business type
-      if (message.length > 1) {
-        await supabaseClient
-          .from('onboarding')
-          .update({ 
-            business_type: userMessage,
-            current_step: 4
-          })
-          .eq('user_id', userId);
-
-        return `Perfect! A **${userMessage}** business. 📍
-
-Where is your business located? Please tell me the **city and state** (or city and country if outside the US).`;
-      }
-      return "What type of business do you run? This helps me customize the phone assistant for your industry.";
-
-    case 4: // Getting business location
-      if (message.length > 1) {
-        await supabaseClient
-          .from('onboarding')
-          .update({ 
-            business_city: userMessage,
-            current_step: 5
-          })
-          .eq('user_id', userId);
-
-        return `Got it! Located in **${userMessage}**. 📞
-
-What's the best **phone number** for your business? This will be the main number customers use to reach you.`;
-      }
-      return "Where is your business located? I need the city and state to help with local customization.";
-
-    case 5: // Getting phone number
-      if (message.length > 1) {
-        await supabaseClient
-          .from('onboarding')
-          .update({ 
-            phone_number: userMessage,
-            current_step: 6
-          })
-          .eq('user_id', userId);
-
-        return `Perfect! I've got **${userMessage}** as your business phone. ⏰
-
-What are your **business hours**? For example:
-- Monday-Friday 9am-5pm
-- 24/7
-- Monday-Saturday 8am-6pm, Closed Sunday
-
-This helps the AI know when to take messages vs. when to try transferring calls.`;
-      }
-      return "What's your business phone number? This is important for setting up call routing.";
-
-    case 6: // Getting business hours
-      if (message.length > 1) {
-        await supabaseClient
-          .from('onboarding')
-          .update({ 
-            opening_hours: userMessage,
-            current_step: 7
-          })
-          .eq('user_id', userId);
-
-        return `Excellent! Your hours are **${userMessage}**. 🛠️
-
-Now, what are the **main services** your business offers? Please list 3-5 key services so the AI can help customers appropriately.
-
-For example:
-- "Hair cuts, coloring, styling, treatments"
-- "Tax preparation, bookkeeping, business consulting"
-- "Pizza delivery, catering, dine-in"`;
-      }
-      return "What are your business hours? This helps the AI assistant know when you're available.";
-
-    case 7: // Getting services
-      if (message.length > 1) {
-        // Parse services into an array
-        const services = userMessage.split(',').map(s => s.trim()).filter(s => s.length > 0);
-        
-        await supabaseClient
-          .from('onboarding')
-          .update({ 
-            services: services,
-            current_step: 8
-          })
-          .eq('user_id', userId);
-
-        return `Great! I've noted these services: **${services.join(', ')}**. 🤖
-
-Finally, how would you like the AI to help with your business? Check all that apply:
-
-- **Appointment scheduling** - Let customers book appointments
-- **Order taking** - Take food orders, product orders, etc.
-- **Customer support** - Answer common questions
-- **Lead qualification** - Screen potential customers
-- **Message taking** - Take detailed messages when you're busy
-- **Information sharing** - Share business info, hours, location
-
-Just tell me which ones interest you most!`;
-      }
-      return "What services does your business offer? List your main services so the AI can help customers properly.";
-
-    case 8: // Getting AI use cases
-      if (message.length > 1) {
-        // Parse AI use cases
-        const useCases = userMessage.toLowerCase().includes('appointment') ? ['appointment_scheduling'] : [];
-        if (userMessage.toLowerCase().includes('order')) useCases.push('order_taking');
-        if (userMessage.toLowerCase().includes('support') || userMessage.toLowerCase().includes('question')) useCases.push('customer_support');
-        if (userMessage.toLowerCase().includes('lead') || userMessage.toLowerCase().includes('qualify')) useCases.push('lead_qualification');
-        if (userMessage.toLowerCase().includes('message')) useCases.push('message_taking');
-        if (userMessage.toLowerCase().includes('information') || userMessage.toLowerCase().includes('info')) useCases.push('information_sharing');
-        
-        // If no specific matches, add general support
-        if (useCases.length === 0) {
-          useCases.push('customer_support', 'message_taking');
-        }
-
-        await supabaseClient
-          .from('onboarding')
-          .update({ 
-            ai_use_cases: useCases,
-            current_step: 9,
-            completed: true,
-            completed_at: new Date().toISOString()
-          })
-          .eq('user_id', userId);
-
-        // Also update user profile
-        await supabaseClient
-          .from('user_profiles')
-          .update({
-            full_name: onboarding.user_name,
-            business_name: onboarding.business_name,
-            business_type: onboarding.business_type,
-            phone_number: onboarding.phone_number,
-            business_data: {
-              city: onboarding.business_city,
-              hours: userMessage,
-              services: onboarding.services,
-              ai_use_cases: useCases
-            }
-          })
-          .eq('id', userId);
-
-        return `🎉 **Congratulations! Your AI phone assistant is now set up!**
-
-Here's what I've configured for you:
-- **Business**: ${onboarding.business_name} (${onboarding.business_type})
-- **Location**: ${onboarding.business_city}
-- **Phone**: ${onboarding.phone_number}
-- **Hours**: ${onboarding.opening_hours}
-- **Services**: ${onboarding.services?.join(', ')}
-- **AI Features**: ${useCases.join(', ').replace(/_/g, ' ')}
-
-Your AI assistant is ready to:
-✅ Answer customer calls professionally
-✅ Handle inquiries about your services
-✅ Take messages when you're unavailable
-✅ Provide business information
-
-**Next steps:**
-1. Test your setup with a practice call
-2. Customize your AI's responses
-3. Set up call forwarding to your business number
-
-You can close this chat and explore your dashboard. Welcome aboard! 🚀`;
-      }
-      return "How would you like the AI to help your business? Tell me about appointment scheduling, order taking, customer support, or other ways you'd like it to assist.";
-
-    default:
-      return `Thanks for your message! I've recorded: "${userMessage}"
-
-Is there anything else you'd like to tell me about your business or how you'd like the AI assistant to help?`;
-  }
-}

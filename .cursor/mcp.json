@@ -1,0 +1,14 @@
+{
+    "mcpServers": {
+        "supabase": {
+            "command": "wsl",
+            "args": [
+                "npx",
+                "-y",
+                "@supabase/mcp-server-supabase@latest",
+                "--access-token",
+                "sbp_e9b0d2cf9ef0574e07248ffde0e1c012deecdfe8"
+            ]
+        }
+    }
+}

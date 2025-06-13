@@ -13,7 +13,7 @@ interface OnboardingChatProps {
 const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
   const { user } = useAuth();
   const { onboarding, refetch: refetchOnboarding } = useOnboarding(user);
-  
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentInput, setCurrentInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -38,7 +38,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
     if (user) {
       loadConversation();
     }
-    
+
     return () => {
       // Cleanup realtime subscription
       if (realtimeChannelRef.current) {
@@ -69,9 +69,9 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
       }
 
       const apiUrl = `${supabaseUrl}/functions/v1/onboarding-chat`;
-      
+
       console.log('Attempting to connect to:', apiUrl);
-      
+
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
@@ -91,39 +91,39 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
       }
 
       const data = await response.json();
-      
+
       if (data.error) {
         throw new Error(data.error);
       }
 
       setConversationId(data.conversationId);
       setMessages(data.messages || []);
-      
+
     } catch (error) {
       console.error('Error loading conversation:', error);
-      
+
       let errorMessage = 'Failed to connect to the chat service.';
-      
+
       if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
         errorMessage = 'Unable to connect to the server. Please check your internet connection and try again.';
       } else if (error instanceof Error) {
         errorMessage = error.message;
       }
-      
+
       setConnectionError(errorMessage);
-      
+
       // Add error message to chat
       const errorMsg: Message = {
         id: `error-${Date.now()}`,
         conversation_id: 'error',
-        sender: 'system',
+        sender: 'system', // Keep for compatibility but role is primary
         role: 'system',
         content: `❌ **Connection Error**: ${errorMessage}\n\nPlease try refreshing the page or contact support if the problem persists.`,
         metadata: {},
         created_at: new Date().toISOString()
       };
       setMessages([errorMsg]);
-      
+
     } finally {
       setIsLoadingConversation(false);
     }
@@ -147,40 +147,40 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
         (payload) => {
           console.log('New message received:', payload);
           const newMessage = payload.new as Message;
-          
+
           setMessages(prev => {
             // Remove optimistic message if this is the real version
-            if (optimisticMessageIdRef.current && 
-                newMessage.sender === 'user' && 
-                newMessage.content === prev.find(m => m.id === optimisticMessageIdRef.current)?.content) {
-              
+            if (optimisticMessageIdRef.current &&
+              newMessage.role === 'user' &&
+              newMessage.content === prev.find(m => m.id === optimisticMessageIdRef.current)?.content) {
+
               // Clear the optimistic message reference
               optimisticMessageIdRef.current = null;
-              
+
               // Replace optimistic message with real one
-              return prev.map(msg => 
-                msg.id.startsWith('optimistic-') && msg.sender === 'user' && msg.content === newMessage.content
+              return prev.map(msg =>
+                msg.id.startsWith('optimistic-') && msg.role === 'user' && msg.content === newMessage.content
                   ? newMessage
                   : msg
               ).filter((msg, index, arr) => {
                 // Remove any duplicate optimistic messages
                 if (msg.id.startsWith('optimistic-')) {
-                  return !arr.some((otherMsg, otherIndex) => 
-                    otherIndex > index && 
-                    !otherMsg.id.startsWith('optimistic-') && 
+                  return !arr.some((otherMsg, otherIndex) =>
+                    otherIndex > index &&
+                    !otherMsg.id.startsWith('optimistic-') &&
                     otherMsg.content === msg.content &&
-                    otherMsg.sender === msg.sender
+                    otherMsg.role === msg.role
                   );
                 }
                 return true;
               });
             }
-            
+
             // Avoid duplicates for non-optimistic messages
             if (prev.some(msg => msg.id === newMessage.id)) {
               return prev;
             }
-            
+
             return [...prev, newMessage];
           });
         }
@@ -210,7 +210,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
     const optimisticMessage: Message = {
       id: optimisticId,
       conversation_id: conversationId,
-      sender: 'user',
+      sender: 'user', // Keep for compatibility but role is primary
       role: 'user',
       content: userMessage,
       metadata: {},
@@ -225,7 +225,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
 
     try {
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/onboarding-chat`;
-      
+
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
@@ -245,7 +245,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
       }
 
       const data = await response.json();
-      
+
       if (data.error) {
         throw new Error(data.error);
       }
@@ -255,16 +255,16 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
 
     } catch (error) {
       console.error('Error sending message:', error);
-      
+
       // Remove optimistic message on error
       setMessages(prev => prev.filter(msg => msg.id !== optimisticId));
       optimisticMessageIdRef.current = null;
-      
+
       // Add error message
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
         conversation_id: conversationId,
-        sender: 'system',
+        sender: 'system', // Keep for compatibility but role is primary
         role: 'system',
         content: `❌ **Failed to send message**: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again.`,
         metadata: {},
@@ -319,22 +319,39 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
   // Calculate progress based on onboarding data
   const calculateProgress = () => {
     if (!onboarding) return 0;
-    
+
     const fields = [
       'user_name', 'business_name', 'business_type', 'business_city',
       'full_address', 'phone_number', 'contact_email', 'opening_hours',
       'services', 'ai_use_cases'
     ];
-    
+
     const completedFields = fields.filter(field => {
       const value = onboarding[field as keyof typeof onboarding];
       return value && (Array.isArray(value) ? value.length > 0 : true);
     }).length;
-    
+
     return Math.round((completedFields / fields.length) * 100);
   };
 
   const progress = calculateProgress();
+
+  // Filter messages to skip irrelevant tool messages
+  const filteredMessages = Array.isArray(messages) ? messages.filter((message) => {
+    if (message.role !== 'tool') return true;
+    // Show tool messages only if they have a known tool_name or non-empty content
+    const hasContent = message.content && message.content.trim() !== '' && message.content !== '{}' && message.content !== 'null';
+    const knownTool = message.tool_name && [
+      'web_search_tool',
+      'store_user_info',
+      'store_business_info',
+      'store_contact_info',
+      'store_business_details',
+      'store_ai_preferences',
+      'complete_onboarding',
+    ].includes(message.tool_name);
+    return hasContent || knownTool;
+  }) : [];
 
   // Show loading state while loading conversation
   if (isLoadingConversation) {
@@ -373,18 +390,18 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
               </p>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <div className="w-32 bg-gray-200 rounded-full h-2" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-label="Setup progress">
-                <div 
+                <div
                   className="bg-gradient-to-r from-purple-500 to-blue-500 h-2 rounded-full transition-all duration-500"
                   style={{ width: `${progress}%` }}
                 ></div>
               </div>
               <span className="text-sm text-gray-500" aria-label={`${progress} percent complete`}>{progress}%</span>
             </div>
-            
+
             <button
               onClick={onClose}
               className="p-2 hover:bg-gray-100 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500"
@@ -415,72 +432,77 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4" role="log" aria-label="Setup conversation" aria-live="polite">
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div className={`flex gap-3 max-w-[80%] ${message.sender === 'user' ? 'flex-row-reverse' : ''}`}>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  message.sender === 'user' 
-                    ? 'bg-purple-500' 
-                    : message.sender === 'tool'
-                    ? 'bg-blue-500'
-                    : message.sender === 'system'
-                    ? 'bg-red-500'
-                    : 'bg-gradient-to-r from-purple-500 to-blue-500'
-                } ${message.id.startsWith('optimistic-') ? 'opacity-70' : ''}`} aria-hidden="true">
-                  {message.sender === 'user' ? (
-                    <User className="w-4 h-4 text-white" />
-                  ) : message.sender === 'tool' ? (
-                    getToolIcon(message.tool_name || '')
-                  ) : message.sender === 'system' ? (
-                    <AlertCircle className="w-4 h-4 text-white" />
-                  ) : (
-                    <Bot className="w-4 h-4 text-white" />
-                  )}
-                </div>
-                
-                <div className={`rounded-2xl px-6 py-4 ${
-                  message.sender === 'user'
+          {(filteredMessages || []).map((message, idx) => {
+            if (!message || typeof message !== 'object') return null;
+            const role = message.role || 'assistant';
+            const id = message.id || `msg-${idx}`;
+            const content = typeof message.content === 'string' ? message.content : '';
+            const createdAt = message.created_at ? new Date(message.created_at) : new Date();
+            const toolName = message.tool_name || '';
+            return (
+              <div
+                key={id}
+                className={`flex ${role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div className={`flex gap-3 max-w-[80%] ${role === 'user' ? 'flex-row-reverse' : ''}`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${role === 'user'
+                    ? 'bg-purple-500'
+                    : role === 'tool'
+                      ? 'bg-blue-500'
+                      : role === 'system'
+                        ? 'bg-red-500'
+                        : 'bg-gradient-to-r from-purple-500 to-blue-500'
+                    } ${id.startsWith('optimistic-') ? 'opacity-70' : ''}`} aria-hidden="true">
+                    {role === 'user' ? (
+                      <User className="w-4 h-4 text-white" />
+                    ) : role === 'tool' ? (
+                      getToolIcon(toolName)
+                    ) : role === 'system' ? (
+                      <AlertCircle className="w-4 h-4 text-white" />
+                    ) : (
+                      <Bot className="w-4 h-4 text-white" />
+                    )}
+                  </div>
+
+                  <div className={`rounded-2xl px-6 py-4 ${role === 'user'
                     ? 'bg-purple-500 text-white'
-                    : message.sender === 'tool'
-                    ? 'bg-blue-50 text-blue-800 border border-blue-200'
-                    : message.sender === 'system'
-                    ? 'bg-red-50 text-red-800 border border-red-200'
-                    : 'bg-gray-50 text-gray-900'
-                } ${message.id.startsWith('optimistic-') ? 'opacity-70' : ''}`} role={message.sender === 'user' ? 'note' : 'status'} aria-label={`${message.sender === 'user' ? 'Your' : message.sender === 'tool' ? 'Tool' : message.sender === 'system' ? 'System' : 'Assistant'} message`}>
-                  
-                  {message.sender === 'tool' && message.tool_name && (
-                    <div className="flex items-center gap-2 mb-2 text-sm font-medium">
-                      {getToolIcon(message.tool_name)}
-                      {getToolDescription(message.tool_name)}
+                    : role === 'tool'
+                      ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                      : role === 'system'
+                        ? 'bg-red-50 text-red-800 border border-red-200'
+                        : 'bg-gray-50 text-gray-900'
+                    } ${id.startsWith('optimistic-') ? 'opacity-70' : ''}`} role={role === 'user' ? 'note' : 'status'} aria-label={`${role === 'user' ? 'Your' : role === 'tool' ? 'Tool' : role === 'system' ? 'System' : 'Assistant'} message`}>
+
+                    {role === 'tool' && toolName && (
+                      <div className="flex items-center gap-2 mb-2 text-sm font-medium">
+                        {getToolIcon(toolName)}
+                        {getToolDescription(toolName)}
+                      </div>
+                    )}
+
+                    <div
+                      className="leading-relaxed prose prose-sm max-w-none"
+                      dangerouslySetInnerHTML={{
+                        __html: content
+                          .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                          .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                          .replace(/\n/g, '<br>')
+                      }}
+                    />
+
+                    <div className={`text-xs mt-2 ${role === 'user' ? 'text-purple-100' :
+                      role === 'tool' ? 'text-blue-600' :
+                        role === 'system' ? 'text-red-600' : 'text-gray-500'
+                      }`}>
+                      {createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {id.startsWith('optimistic-') && <span className="ml-1">⏳</span>}
                     </div>
-                  )}
-                  
-                  <div 
-                    className="leading-relaxed prose prose-sm max-w-none"
-                    dangerouslySetInnerHTML={{ 
-                      __html: message.content
-                        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                        .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                        .replace(/\n/g, '<br>')
-                    }}
-                  />
-                  
-                  <div className={`text-xs mt-2 ${
-                    message.sender === 'user' ? 'text-purple-100' : 
-                    message.sender === 'tool' ? 'text-blue-600' : 
-                    message.sender === 'system' ? 'text-red-600' : 'text-gray-500'
-                  }`}>
-                    {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    {message.id.startsWith('optimistic-') && <span className="ml-1">⏳</span>}
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
-          
+            );
+          })}
+
           {isSubmitting && (
             <div className="flex justify-start">
               <div className="flex gap-3">
@@ -498,7 +520,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
               </div>
             </div>
           )}
-          
+
           <div ref={messagesEndRef} />
         </div>
 
@@ -528,7 +550,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
               <Send className="w-5 h-5" />
             </button>
           </div>
-          
+
           <div className="mt-2 text-xs text-gray-500 text-center">
             {connectionError ? (
               <span className="text-red-500">Connection error - please retry</span>

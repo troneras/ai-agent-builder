@@ -50,7 +50,8 @@ CREATE TABLE messages (
   tool_args jsonb,               -- input args (if type = 'tool_call')
   tool_result jsonb,             -- output result (if type = 'tool_result')
   metadata jsonb DEFAULT '{}',   -- additional metadata
-  created_at timestamptz DEFAULT now()
+  created_at timestamptz DEFAULT now(),
+  tool_calls jsonb
 );
 
 -- Create tool_calls table for traceability
@@ -206,38 +207,6 @@ CREATE TRIGGER update_tool_calls_updated_at
 CREATE TRIGGER update_onboarding_updated_at
   BEFORE UPDATE ON onboarding
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
--- Update handle_new_user function
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
-DECLARE
-  conversation_id uuid;
-BEGIN
-  -- Create user profile
-  INSERT INTO public.user_profiles (id, email)
-  VALUES (NEW.id, NEW.email);
-  
-  -- Create onboarding conversation
-  INSERT INTO public.conversations (user_id, title, type)
-  VALUES (NEW.id, 'Onboarding Setup', 'onboarding')
-  RETURNING id INTO conversation_id;
-  
-  -- Create onboarding record
-  INSERT INTO public.onboarding (user_id, conversation_id)
-  VALUES (NEW.id, conversation_id);
-  
-  -- Add initial assistant message
-  INSERT INTO public.messages (conversation_id, sender, role, content)
-  VALUES (
-    conversation_id,
-    'assistant',
-    'assistant',
-    '👋 Hi! I''m your Cutcall setup assistant. I''m here to help you get your AI phone assistant ready for your business. Let''s start with something simple - what''s your name?'
-  );
-  
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Create function to get or create onboarding conversation
 CREATE OR REPLACE FUNCTION get_or_create_onboarding_conversation(p_user_id uuid)
