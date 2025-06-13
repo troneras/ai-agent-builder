@@ -15,6 +15,8 @@
 
 import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { OpenAI } from "npm:openai@4.28.0";
+import { z } from "npm:zod@3.22.0";
+import { zodToJsonSchema } from "npm:zod-to-json-schema@3.22.0";
 
 // Constants
 const CORS_HEADERS = {
@@ -229,6 +231,33 @@ const tools = [
     },
   },
 ] as const;
+
+// Response format schema
+export const responseFormatSchema = z.object({
+  text: z.string().describe("The user-facing message content."),
+  artifacts: z.string().describe(
+    "Optional UI artifacts for advanced rendering. Structure reserved for future use.",
+  ),
+}).strict();
+
+type ChatResponse = z.infer<typeof responseFormatSchema>;
+
+// Convert Zod schema to JSON schema for OpenAI
+const responseJsonSchema = {
+  name: "chat_response",
+  strict: true,
+  schema: zodToJsonSchema(responseFormatSchema),
+};
+
+function handleChatResponse(rawResponse: unknown): ChatResponse | null {
+  const parsed = responseFormatSchema.safeParse(rawResponse);
+  if (!parsed.success) {
+    // Handle invalid response (e.g., fallback to plain text, show error, log, etc.)
+    console.error("Invalid response format", parsed.error);
+    return null;
+  }
+  return parsed.data;
+}
 
 // Utility functions
 function createErrorResponse(message: string, status = 400): Response {
@@ -629,10 +658,23 @@ Deno.serve(async (req: Request) => {
         ],
         tools,
         tool_choice: "auto",
+        response_format: {
+          type: "json_schema",
+          json_schema: responseJsonSchema,
+        },
       });
 
       const response = completion.choices[0].message;
       const toolCalls = (response.tool_calls || []) as ToolCallItem[];
+
+      // Parse structured response
+      let responseContent = "";
+      if (response.content) {
+        const parsedResponse = handleChatResponse(
+          safeJsonParse(response.content),
+        );
+        responseContent = parsedResponse?.text ?? response.content;
+      }
 
       let nextOrder = currentOrder + 1;
 
@@ -643,7 +685,7 @@ Deno.serve(async (req: Request) => {
         console.log("Attempting to save assistant message with tool_calls:", {
           conversation_id: typedConversation.id,
           role: "assistant",
-          content: response.content ?? "",
+          content: responseContent,
           message_order: nextOrder,
           tool_calls: toolCalls,
         });
@@ -653,7 +695,7 @@ Deno.serve(async (req: Request) => {
           .insert({
             conversation_id: typedConversation.id,
             role: "assistant",
-            content: response.content ?? "",
+            content: responseContent,
             tool_calls: toolCalls,
             message_order: nextOrder,
             created_at: new Date().toISOString(),
@@ -679,7 +721,7 @@ Deno.serve(async (req: Request) => {
             .insert({
               conversation_id: typedConversation.id,
               role: "assistant",
-              content: response.content ?? "",
+              content: responseContent,
               message_order: nextOrder,
               created_at: new Date().toISOString(),
               token_count: completion.usage?.completion_tokens ?? null,
@@ -751,18 +793,32 @@ Deno.serve(async (req: Request) => {
             },
             ...updatedConversationHistory,
           ],
+          response_format: {
+            type: "json_schema",
+            json_schema: responseJsonSchema,
+          },
         });
 
         const finalResponse = finalCompletion.choices[0].message;
 
-        // Save the final assistant response
+        // Parse final structured response
+        let finalResponseContent = "";
         if (finalResponse.content) {
+          const parsedFinalResponse = handleChatResponse(
+            safeJsonParse(finalResponse.content),
+          );
+          finalResponseContent = parsedFinalResponse?.text ??
+            finalResponse.content;
+        }
+
+        // Save the final assistant response
+        if (finalResponseContent) {
           const { error: finalMsgError } = await supabaseClient
             .from("messages")
             .insert({
               conversation_id: typedConversation.id,
               role: "assistant",
-              content: finalResponse.content,
+              content: finalResponseContent,
               message_order: nextOrder,
               created_at: new Date().toISOString(),
               token_count: finalCompletion.usage?.completion_tokens ?? null,
@@ -776,14 +832,14 @@ Deno.serve(async (req: Request) => {
             throw finalMsgError;
           }
         }
-      } else if (response.content) {
+      } else if (responseContent) {
         // If no tool calls, save the response directly
         await supabaseClient
           .from("messages")
           .insert({
             conversation_id: typedConversation.id,
             role: "assistant",
-            content: response.content,
+            content: responseContent,
             message_order: nextOrder,
             created_at: new Date().toISOString(),
             token_count: completion.usage?.completion_tokens ?? null,
