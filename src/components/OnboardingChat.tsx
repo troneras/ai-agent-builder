@@ -23,6 +23,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const realtimeChannelRef = useRef<any>(null);
+  const optimisticMessageIdRef = useRef<string | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -105,10 +106,38 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
           const newMessage = payload.new as Message;
           
           setMessages(prev => {
-            // Avoid duplicates
+            // Remove optimistic message if this is the real version
+            if (optimisticMessageIdRef.current && 
+                newMessage.sender === 'user' && 
+                newMessage.content === prev.find(m => m.id === optimisticMessageIdRef.current)?.content) {
+              
+              // Clear the optimistic message reference
+              optimisticMessageIdRef.current = null;
+              
+              // Replace optimistic message with real one
+              return prev.map(msg => 
+                msg.id.startsWith('optimistic-') && msg.sender === 'user' && msg.content === newMessage.content
+                  ? newMessage
+                  : msg
+              ).filter((msg, index, arr) => {
+                // Remove any duplicate optimistic messages
+                if (msg.id.startsWith('optimistic-')) {
+                  return !arr.some((otherMsg, otherIndex) => 
+                    otherIndex > index && 
+                    !otherMsg.id.startsWith('optimistic-') && 
+                    otherMsg.content === msg.content &&
+                    otherMsg.sender === msg.sender
+                  );
+                }
+                return true;
+              });
+            }
+            
+            // Avoid duplicates for non-optimistic messages
             if (prev.some(msg => msg.id === newMessage.id)) {
               return prev;
             }
+            
             return [...prev, newMessage];
           });
         }
@@ -125,9 +154,10 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
     setCurrentInput('');
     setIsSubmitting(true);
 
-    // Add user message optimistically
+    // Create optimistic message with unique ID
+    const optimisticId = `optimistic-${Date.now()}-${Math.random()}`;
     const optimisticMessage: Message = {
-      id: `temp-${Date.now()}`,
+      id: optimisticId,
       conversation_id: conversationId,
       sender: 'user',
       role: 'user',
@@ -135,6 +165,11 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
       metadata: {},
       created_at: new Date().toISOString()
     };
+
+    // Store reference to optimistic message
+    optimisticMessageIdRef.current = optimisticId;
+
+    // Add optimistic message immediately
     setMessages(prev => [...prev, optimisticMessage]);
 
     try {
@@ -157,16 +192,15 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
         throw new Error('Failed to send message');
       }
 
-      // Remove optimistic message since real one will come via realtime
-      setMessages(prev => prev.filter(msg => msg.id !== optimisticMessage.id));
-
       // Refresh onboarding data
       refetchOnboarding();
 
     } catch (error) {
       console.error('Error sending message:', error);
+      
       // Remove optimistic message on error
-      setMessages(prev => prev.filter(msg => msg.id !== optimisticMessage.id));
+      setMessages(prev => prev.filter(msg => msg.id !== optimisticId));
+      optimisticMessageIdRef.current = null;
       
       // Add error message
       const errorMessage: Message = {
@@ -305,7 +339,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
                     : message.sender === 'system'
                     ? 'bg-green-500'
                     : 'bg-gradient-to-r from-purple-500 to-blue-500'
-                }`} aria-hidden="true">
+                } ${message.id.startsWith('optimistic-') ? 'opacity-70' : ''}`} aria-hidden="true">
                   {message.sender === 'user' ? (
                     <User className="w-4 h-4 text-white" />
                   ) : message.sender === 'tool' ? (
@@ -325,7 +359,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
                     : message.sender === 'system'
                     ? 'bg-green-50 text-green-800 border border-green-200'
                     : 'bg-gray-50 text-gray-900'
-                }`} role={message.sender === 'user' ? 'note' : 'status'} aria-label={`${message.sender === 'user' ? 'Your' : message.sender === 'tool' ? 'Tool' : message.sender === 'system' ? 'System' : 'Assistant'} message`}>
+                } ${message.id.startsWith('optimistic-') ? 'opacity-70' : ''}`} role={message.sender === 'user' ? 'note' : 'status'} aria-label={`${message.sender === 'user' ? 'Your' : message.sender === 'tool' ? 'Tool' : message.sender === 'system' ? 'System' : 'Assistant'} message`}>
                   
                   {message.sender === 'tool' && message.tool_name && (
                     <div className="flex items-center gap-2 mb-2 text-sm font-medium">
@@ -350,6 +384,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
                     message.sender === 'system' ? 'text-green-600' : 'text-gray-500'
                   }`}>
                     {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {message.id.startsWith('optimistic-') && <span className="ml-1">⏳</span>}
                   </div>
                 </div>
               </div>
