@@ -8,6 +8,7 @@ import PricingSection from './components/PricingSection';
 import Footer from './components/Footer';
 import AuthForm from './components/AuthForm';
 import OnboardingChat from './components/OnboardingChat';
+import Dashboard from './components/Dashboard';
 import ParticleBackground from './components/ParticleBackground';
 import { useAuth } from './hooks/useAuth';
 import { useUserProfile } from './hooks/useUserProfile';
@@ -18,6 +19,7 @@ function App() {
   const [showAuth, setShowAuth] = useState(false);
   const [authMode, setAuthMode] = useState<'register' | 'login' | 'forgot-password'>('register');
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
   const { user, loading } = useAuth();
   const { profile, loading: profileLoading } = useUserProfile(user);
   const { onboarding, loading: onboardingLoading } = useOnboarding(user);
@@ -35,8 +37,8 @@ function App() {
     if (user) {
       // Check if onboarding is completed
       if (onboarding?.completed) {
-        // Redirect to dashboard (for now just show a message)
-        alert('Dashboard coming soon! Your phone assistant is ready to use.');
+        // Show dashboard
+        setShowDashboard(true);
       } else {
         // Show onboarding
         setShowOnboarding(true);
@@ -64,11 +66,20 @@ function App() {
 
   const handleOnboardingClose = () => {
     setShowOnboarding(false);
+    // If onboarding was completed, show dashboard
+    if (onboarding?.completed) {
+      setShowDashboard(true);
+    }
+  };
+
+  const handleDashboardClose = () => {
+    setShowDashboard(false);
   };
 
   const handleSignOut = async () => {
     await authHelpers.signOut();
     setShowOnboarding(false);
+    setShowDashboard(false);
   };
 
   // Show loading state while checking authentication and profile
@@ -111,6 +122,10 @@ function App() {
 
       {showOnboarding && user && (
         <OnboardingChat onClose={handleOnboardingClose} />
+      )}
+
+      {showDashboard && user && (
+        <Dashboard onClose={handleDashboardClose} />
       )}
     </div>
   );
