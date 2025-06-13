@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Send, User, ExternalLink, Bot, Search, Save, CheckCircle } from 'lucide-react';
+import { X, Send, User, Bot, Search, Save, CheckCircle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useOnboarding } from '../hooks/useOnboarding';
 import { supabase } from '../lib/supabase';
@@ -22,6 +22,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const realtimeChannelRef = useRef<any>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -34,9 +35,21 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
   useEffect(() => {
     if (user) {
       loadConversation();
+    }
+    
+    return () => {
+      // Cleanup realtime subscription
+      if (realtimeChannelRef.current) {
+        realtimeChannelRef.current.unsubscribe();
+      }
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (conversationId) {
       setupRealtimeSubscription();
     }
-  }, [user]);
+  }, [conversationId]);
 
   const loadConversation = async () => {
     if (!user) return;
@@ -73,10 +86,12 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
   };
 
   const setupRealtimeSubscription = () => {
-    if (!conversationId) return;
+    if (!conversationId || realtimeChannelRef.current) return;
 
-    const subscription = supabase
-      .channel('messages')
+    console.log('Setting up realtime subscription for conversation:', conversationId);
+
+    realtimeChannelRef.current = supabase
+      .channel(`messages:${conversationId}`)
       .on(
         'postgres_changes',
         {
@@ -86,7 +101,9 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
           filter: `conversation_id=eq.${conversationId}`
         },
         (payload) => {
+          console.log('New message received:', payload);
           const newMessage = payload.new as Message;
+          
           setMessages(prev => {
             // Avoid duplicates
             if (prev.some(msg => msg.id === newMessage.id)) {
@@ -96,11 +113,9 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
           });
         }
       )
-      .subscribe();
-
-    return () => {
-      subscription.unsubscribe();
-    };
+      .subscribe((status) => {
+        console.log('Realtime subscription status:', status);
+      });
   };
 
   const handleSendMessage = async () => {
@@ -390,7 +405,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
           </div>
           
           <div className="mt-2 text-xs text-gray-500 text-center">
-            {conversationId ? `Conversation ID: ${conversationId} • ` : ''}Powered by AI • Your data is secure and private
+            {conversationId ? `Conversation ID: ${conversationId} • ` : ''}Powered by AI • Real-time messaging enabled
           </div>
         </div>
       </div>

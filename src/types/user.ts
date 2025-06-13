@@ -63,9 +63,25 @@ export interface Message {
   conversation_id: string;
   sender: 'user' | 'assistant' | 'system' | 'tool';
   role: 'user' | 'assistant' | 'system' | 'tool';
+  type?: 'message' | 'tool_call' | 'tool_result';
   content: string;
   tool_name?: string;
   tool_call_id?: string;
+  tool_args?: Record<string, any>;
+  tool_result?: Record<string, any>;
   metadata: Record<string, any>;
   created_at: string;
+}
+
+export interface ToolCall {
+  id: string;
+  conversation_id: string;
+  message_id?: string;
+  name: string;
+  arguments: Record<string, any>;
+  result?: Record<string, any>;
+  status: 'pending' | 'success' | 'error';
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
 }

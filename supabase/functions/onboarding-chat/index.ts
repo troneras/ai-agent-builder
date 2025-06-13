@@ -223,19 +223,37 @@ async function callSearchModel(query: string) {
   return data.choices[0].message.content
 }
 
-async function addMessageToConversation(supabase: any, conversationId: string, sender: string, role: string, content: string, toolName?: string, toolCallId?: string, metadata?: any) {
+async function addMessageToConversation(
+  supabase: any, 
+  conversationId: string, 
+  sender: string, 
+  role: string, 
+  content: string, 
+  type: string = 'message',
+  toolName?: string, 
+  toolCallId?: string, 
+  toolArgs?: any,
+  toolResult?: any,
+  metadata?: any
+) {
   try {
+    const messageData: any = {
+      conversation_id: conversationId,
+      sender,
+      role,
+      content,
+      type,
+      metadata: metadata || {}
+    }
+
+    if (toolName) messageData.tool_name = toolName
+    if (toolCallId) messageData.tool_call_id = toolCallId
+    if (toolArgs) messageData.tool_args = toolArgs
+    if (toolResult) messageData.tool_result = toolResult
+
     const { data, error } = await supabase
       .from('messages')
-      .insert({
-        conversation_id: conversationId,
-        sender,
-        role,
-        content,
-        tool_name: toolName,
-        tool_call_id: toolCallId,
-        metadata: metadata || {}
-      })
+      .insert(messageData)
       .select()
       .single()
 
@@ -247,6 +265,43 @@ async function addMessageToConversation(supabase: any, conversationId: string, s
     return data
   } catch (err) {
     console.error('Message insert error:', err)
+    return null
+  }
+}
+
+async function addToolCall(
+  supabase: any,
+  conversationId: string,
+  messageId: string,
+  name: string,
+  arguments: any,
+  result?: any,
+  status: string = 'pending',
+  errorMessage?: string
+) {
+  try {
+    const { data, error } = await supabase
+      .from('tool_calls')
+      .insert({
+        conversation_id: conversationId,
+        message_id: messageId,
+        name,
+        arguments,
+        result,
+        status,
+        error_message: errorMessage
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error adding tool call:', error)
+      return null
+    }
+
+    return data
+  } catch (err) {
+    console.error('Tool call insert error:', err)
     return null
   }
 }
@@ -346,6 +401,7 @@ async function handleToolCall(toolCall: any, supabase: any, userId: string, conv
   const parsedArgs = JSON.parse(args)
 
   let toolResult = ''
+  let status = 'pending'
 
   try {
     switch (name) {
@@ -357,6 +413,7 @@ async function handleToolCall(toolCall: any, supabase: any, userId: string, conv
           user_name: parsedArgs.user_name 
         })
         toolResult = `✅ Stored your name: ${parsedArgs.user_name}`
+        status = 'success'
         break
 
       case 'store_business_info':
@@ -373,6 +430,7 @@ async function handleToolCall(toolCall: any, supabase: any, userId: string, conv
         if (parsedArgs.business_city) {
           toolResult += ` in ${parsedArgs.business_city}`
         }
+        status = 'success'
         break
 
       case 'store_contact_info':
@@ -405,6 +463,7 @@ async function handleToolCall(toolCall: any, supabase: any, userId: string, conv
         if (parsedArgs.website) contactItems.push(`website: ${parsedArgs.website}`)
         
         toolResult = `✅ Stored contact info: ${contactItems.join(', ')}`
+        status = 'success'
         break
 
       case 'store_business_details':
@@ -418,6 +477,7 @@ async function handleToolCall(toolCall: any, supabase: any, userId: string, conv
         if (parsedArgs.services) detailItems.push(`services: ${parsedArgs.services.join(', ')}`)
         
         toolResult = `✅ Stored business details: ${detailItems.join(', ')}`
+        status = 'success'
         break
 
       case 'store_ai_preferences':
@@ -425,47 +485,58 @@ async function handleToolCall(toolCall: any, supabase: any, userId: string, conv
           ai_use_cases: parsedArgs.ai_use_cases 
         })
         toolResult = `✅ Stored AI preferences: ${parsedArgs.ai_use_cases.join(', ')}`
+        status = 'success'
         break
 
       case 'web_search_tool':
         const searchQuery = `Find detailed information about "${parsedArgs.business_name}" ${parsedArgs.business_type} business in ${parsedArgs.city}. Include: full address, phone number, email, website, operating hours, and services offered.`
         const searchResults = await callSearchModel(searchQuery)
         toolResult = `🔍 Found business information: ${searchResults}`
+        status = 'success'
         break
 
       case 'complete_onboarding':
         await completeOnboarding(supabase, userId)
         toolResult = `🎉 Onboarding completed successfully! Your AI phone assistant is now ready to help your business.`
+        status = 'success'
         break
 
       default:
         toolResult = `❌ Unknown tool: ${name}`
+        status = 'error'
     }
-
-    // Add tool message to conversation
-    await addMessageToConversation(
-      supabase,
-      conversationId,
-      'tool',
-      'tool',
-      toolResult,
-      name,
-      toolCall.id
-    )
 
   } catch (error) {
     console.error(`Tool execution error for ${name}:`, error)
     toolResult = `❌ Error executing ${name}: ${error.message}`
-    
-    // Add error message to conversation
-    await addMessageToConversation(
+    status = 'error'
+  }
+
+  // Add tool message to conversation
+  const toolMessage = await addMessageToConversation(
+    supabase,
+    conversationId,
+    'tool',
+    'tool',
+    toolResult,
+    'tool_result',
+    name,
+    toolCall.id,
+    parsedArgs,
+    { result: toolResult, status }
+  )
+
+  // Add tool call record for traceability
+  if (toolMessage) {
+    await addToolCall(
       supabase,
       conversationId,
-      'tool',
-      'tool',
-      toolResult,
+      toolMessage.id,
       name,
-      toolCall.id
+      parsedArgs,
+      { result: toolResult },
+      status,
+      status === 'error' ? toolResult : undefined
     )
   }
 
@@ -516,10 +587,13 @@ Deno.serve(async (req: Request) => {
             conversationId,
             messages: messages.map(msg => ({
               id: msg.id,
+              conversation_id: msg.conversation_id,
               sender: msg.sender,
               role: msg.role,
               content: msg.content,
               tool_name: msg.tool_name,
+              tool_call_id: msg.tool_call_id,
+              metadata: msg.metadata,
               created_at: msg.created_at
             }))
           }),
