@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Send, User, Bot, Search, Save, CheckCircle } from 'lucide-react';
+import { X, Send, User, Bot, Search, Save, CheckCircle, AlertCircle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useOnboarding } from '../hooks/useOnboarding';
 import { supabase } from '../lib/supabase';
@@ -19,6 +19,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [isLoadingConversation, setIsLoadingConversation] = useState(true);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -57,13 +58,24 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
 
     try {
       setIsLoadingConversation(true);
+      setConnectionError(null);
 
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/onboarding-chat`;
+      // Validate environment variables
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      if (!supabaseUrl || !supabaseAnonKey) {
+        throw new Error('Missing Supabase configuration. Please check your environment variables.');
+      }
+
+      const apiUrl = `${supabaseUrl}/functions/v1/onboarding-chat`;
+      
+      console.log('Attempting to connect to:', apiUrl);
       
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Authorization': `Bearer ${supabaseAnonKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -73,14 +85,45 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to load conversation');
+        const errorText = await response.text();
+        console.error('API Response Error:', response.status, errorText);
+        throw new Error(`API Error (${response.status}): ${errorText || 'Failed to load conversation'}`);
       }
 
       const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
       setConversationId(data.conversationId);
       setMessages(data.messages || []);
+      
     } catch (error) {
       console.error('Error loading conversation:', error);
+      
+      let errorMessage = 'Failed to connect to the chat service.';
+      
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        errorMessage = 'Unable to connect to the server. Please check your internet connection and try again.';
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
+      setConnectionError(errorMessage);
+      
+      // Add error message to chat
+      const errorMsg: Message = {
+        id: `error-${Date.now()}`,
+        conversation_id: 'error',
+        sender: 'system',
+        role: 'system',
+        content: `❌ **Connection Error**: ${errorMessage}\n\nPlease try refreshing the page or contact support if the problem persists.`,
+        metadata: {},
+        created_at: new Date().toISOString()
+      };
+      setMessages([errorMsg]);
+      
     } finally {
       setIsLoadingConversation(false);
     }
@@ -148,7 +191,15 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
   };
 
   const handleSendMessage = async () => {
-    if (!currentInput.trim() || isSubmitting || !user || !conversationId) return;
+    if (!currentInput.trim() || isSubmitting || !user) return;
+
+    // If there's a connection error, try to reconnect first
+    if (connectionError) {
+      await loadConversation();
+      if (connectionError) return; // Still has error, don't proceed
+    }
+
+    if (!conversationId) return;
 
     const userMessage = currentInput.trim();
     setCurrentInput('');
@@ -189,7 +240,14 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to send message');
+        const errorText = await response.text();
+        throw new Error(`Failed to send message (${response.status}): ${errorText}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error);
       }
 
       // Refresh onboarding data
@@ -208,7 +266,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
         conversation_id: conversationId,
         sender: 'system',
         role: 'system',
-        content: '❌ Failed to send message. Please try again.',
+        content: `❌ **Failed to send message**: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again.`,
         metadata: {},
         created_at: new Date().toISOString()
       };
@@ -223,6 +281,11 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
       e.preventDefault();
       handleSendMessage();
     }
+  };
+
+  const handleRetryConnection = () => {
+    setConnectionError(null);
+    loadConversation();
   };
 
   const getToolIcon = (toolName: string) => {
@@ -297,7 +360,16 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
             <div>
               <h2 id="onboarding-title" className="text-xl font-bold text-gray-900">AI-Powered Setup</h2>
               <p className="text-sm text-gray-500">
-                {conversationId ? `Conversation: ${conversationId.slice(-8)}` : 'Setting up your phone assistant'}
+                {connectionError ? (
+                  <span className="text-red-500 flex items-center gap-1">
+                    <AlertCircle className="w-4 h-4" />
+                    Connection Error
+                  </span>
+                ) : conversationId ? (
+                  `Conversation: ${conversationId.slice(-8)}`
+                ) : (
+                  'Setting up your phone assistant'
+                )}
               </p>
             </div>
           </div>
@@ -323,6 +395,24 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
           </div>
         </div>
 
+        {/* Connection Error Banner */}
+        {connectionError && (
+          <div className="bg-red-50 border-b border-red-200 p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-red-700">
+                <AlertCircle className="w-5 h-5" />
+                <span className="font-medium">Connection Error</span>
+              </div>
+              <button
+                onClick={handleRetryConnection}
+                className="bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1 rounded-md text-sm font-medium transition-colors"
+              >
+                Retry Connection
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4" role="log" aria-label="Setup conversation" aria-live="polite">
           {messages.map((message) => (
@@ -337,7 +427,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
                     : message.sender === 'tool'
                     ? 'bg-blue-500'
                     : message.sender === 'system'
-                    ? 'bg-green-500'
+                    ? 'bg-red-500'
                     : 'bg-gradient-to-r from-purple-500 to-blue-500'
                 } ${message.id.startsWith('optimistic-') ? 'opacity-70' : ''}`} aria-hidden="true">
                   {message.sender === 'user' ? (
@@ -345,7 +435,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
                   ) : message.sender === 'tool' ? (
                     getToolIcon(message.tool_name || '')
                   ) : message.sender === 'system' ? (
-                    <CheckCircle className="w-4 h-4 text-white" />
+                    <AlertCircle className="w-4 h-4 text-white" />
                   ) : (
                     <Bot className="w-4 h-4 text-white" />
                   )}
@@ -357,7 +447,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
                     : message.sender === 'tool'
                     ? 'bg-blue-50 text-blue-800 border border-blue-200'
                     : message.sender === 'system'
-                    ? 'bg-green-50 text-green-800 border border-green-200'
+                    ? 'bg-red-50 text-red-800 border border-red-200'
                     : 'bg-gray-50 text-gray-900'
                 } ${message.id.startsWith('optimistic-') ? 'opacity-70' : ''}`} role={message.sender === 'user' ? 'note' : 'status'} aria-label={`${message.sender === 'user' ? 'Your' : message.sender === 'tool' ? 'Tool' : message.sender === 'system' ? 'System' : 'Assistant'} message`}>
                   
@@ -381,7 +471,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
                   <div className={`text-xs mt-2 ${
                     message.sender === 'user' ? 'text-purple-100' : 
                     message.sender === 'tool' ? 'text-blue-600' : 
-                    message.sender === 'system' ? 'text-green-600' : 'text-gray-500'
+                    message.sender === 'system' ? 'text-red-600' : 'text-gray-500'
                   }`}>
                     {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     {message.id.startsWith('optimistic-') && <span className="ml-1">⏳</span>}
@@ -422,16 +512,16 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
               value={currentInput}
               onChange={(e) => setCurrentInput(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Type your message..."
-              className="flex-1 resize-none border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              placeholder={connectionError ? "Fix connection to send messages..." : "Type your message..."}
+              className="flex-1 resize-none border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
               rows={1}
               aria-describedby="input-help"
-              disabled={isSubmitting || !conversationId}
+              disabled={isSubmitting || !conversationId || !!connectionError}
             />
             <div id="input-help" className="sr-only">Press Enter to send your message</div>
             <button
               onClick={handleSendMessage}
-              disabled={!currentInput.trim() || isSubmitting || !conversationId}
+              disabled={!currentInput.trim() || isSubmitting || !conversationId || !!connectionError}
               className="bg-gradient-to-r from-purple-500 to-blue-500 text-white p-3 rounded-xl hover:from-purple-600 hover:to-blue-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-purple-500"
               aria-label="Send message"
             >
@@ -440,7 +530,13 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
           </div>
           
           <div className="mt-2 text-xs text-gray-500 text-center">
-            {conversationId ? `Conversation ID: ${conversationId} • ` : ''}Powered by AI • Real-time messaging enabled
+            {connectionError ? (
+              <span className="text-red-500">Connection error - please retry</span>
+            ) : conversationId ? (
+              `Conversation ID: ${conversationId} • Powered by AI • Real-time messaging enabled`
+            ) : (
+              'Powered by AI • Real-time messaging enabled'
+            )}
           </div>
         </div>
       </div>
