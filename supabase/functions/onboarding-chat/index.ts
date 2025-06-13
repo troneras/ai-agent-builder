@@ -21,7 +21,8 @@ CRITICAL RULES:
 3. Only use store tools AFTER the user confirms the data is accurate
 4. If user says "no" or corrects information, update your understanding but don't store until they confirm
 5. After using web_search_tool, ALWAYS generate a response presenting the findings and asking for confirmation
-6. After any tool execution, continue the conversation naturally - don't stop responding
+6. After ANY tool execution, you MUST continue the conversation naturally - never stop responding
+7. ALWAYS provide a follow-up message after tool execution to guide the user
 
 CONVERSATION FLOW:
 1. Get user's name for personalization
@@ -36,7 +37,7 @@ TOOL USAGE GUIDELINES:
 - After web search: Present findings in a friendly way and ask for confirmation
 - For storing data: Confirm what was saved and continue the conversation
 - For completion: Celebrate and explain next steps
-- ALWAYS continue the conversation after tool execution
+- MANDATORY: ALWAYS continue the conversation after tool execution with helpful guidance
 
 AI USE CASE EXPLANATIONS:
 - **Appointment Scheduling**: "I can integrate with your Google Calendar to automatically find available slots and book appointments when customers call"
@@ -51,7 +52,7 @@ PERSONALITY:
 - Patient and understanding
 - Use emojis and markdown for better readability
 
-Remember: Confirmation is MANDATORY before storing any data! Always continue the conversation after tool execution.`
+Remember: Confirmation is MANDATORY before storing any data! Always continue the conversation after tool execution with clear next steps.`
 
 const tools = [
   {
@@ -658,10 +659,10 @@ Deno.serve(async (req: Request) => {
               await handleToolCall(toolCall, supabase, userId, convId)
             }
 
-            // Get updated conversation and call OpenAI again for follow-up response
+            // CRITICAL: Always get follow-up response after tool execution
             const updatedMessages = await getConversationMessages(supabase, convId)
             const updatedOpenAIMessages: ChatMessage[] = [
-              { role: 'system', content: SYSTEM_PROMPT },
+              { role: 'system', content: SYSTEM_PROMPT + '\n\nIMPORTANT: You just executed a tool. You MUST now provide a helpful follow-up response to guide the user on what to do next. Present any findings clearly and ask for confirmation or next steps.' },
               ...updatedMessages
                 .filter(msg => msg.sender !== 'tool')
                 .map(msg => ({
@@ -670,6 +671,7 @@ Deno.serve(async (req: Request) => {
                 }))
             ]
 
+            // Force the agent to continue the conversation
             const followUpResponse = await callOpenAI(updatedOpenAIMessages, false)
             const followUpData = await followUpResponse.json()
 
@@ -680,6 +682,15 @@ Deno.serve(async (req: Request) => {
                 'assistant', 
                 'assistant', 
                 followUpData.choices[0].message.content
+              )
+            } else {
+              // Fallback: Add a generic follow-up message if the agent doesn't respond
+              await addMessageToConversation(
+                supabase,
+                convId,
+                'assistant',
+                'assistant',
+                "I've completed that task! How does this information look? Should I save it or would you like to make any changes?"
               )
             }
 
