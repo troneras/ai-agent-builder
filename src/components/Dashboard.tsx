@@ -28,7 +28,9 @@ import {
   Search,
   RefreshCw,
   Crown,
-  Zap
+  Zap,
+  LogOut,
+  ArrowLeft
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useUserProfile } from '../hooks/useUserProfile';
@@ -37,7 +39,8 @@ import { supabase } from '../lib/supabase';
 import Logo from './Logo';
 
 interface DashboardProps {
-  onClose: () => void;
+  onBackToLanding: () => void;
+  onSignOut: () => void;
 }
 
 interface CallRecord {
@@ -61,7 +64,7 @@ interface BusinessStats {
   customer_satisfaction: number;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ onClose }) => {
+const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => {
   const { user } = useAuth();
   const { profile, updateProfile } = useUserProfile(user);
   const { onboarding } = useOnboarding(user);
@@ -277,119 +280,142 @@ const Dashboard: React.FC<DashboardProps> = ({ onClose }) => {
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl w-full max-w-6xl h-[90vh] flex items-center justify-center">
-          <div className="text-center">
-            <div className="w-12 h-12 border-4 border-purple-200 border-t-purple-500 rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading your dashboard...</p>
-          </div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-purple-200 border-t-purple-500 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading your dashboard...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" role="dialog" aria-labelledby="dashboard-title" aria-modal="true">
-      <div className="bg-white rounded-2xl w-full max-w-7xl h-[95vh] flex flex-col shadow-2xl">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <div className="flex items-center gap-4">
-            <Logo size="md" showText={false} />
-            <div>
-              <h1 id="dashboard-title" className="text-2xl font-bold text-gray-900">Dashboard</h1>
-              <p className="text-gray-500">Manage your phone assistant</p>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 lg:px-6">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center gap-4">
+              <Logo size="lg" showText={true} />
+              <div className="hidden sm:block">
+                <h1 className="text-xl font-bold text-gray-900">Dashboard</h1>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4">
+              {getSubscriptionBadge()}
+              
+              <button
+                onClick={onBackToLanding}
+                className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Back to landing page"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span className="hidden sm:inline">Back to Site</span>
+              </button>
+
+              <div className="flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-lg">
+                <div className="w-8 h-8 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center font-semibold text-sm">
+                  {user?.email?.charAt(0).toUpperCase()}
+                </div>
+                <div className="hidden sm:block">
+                  <div className="text-sm font-medium text-gray-900">{user?.email}</div>
+                </div>
+              </div>
+
+              <button
+                onClick={onSignOut}
+                className="flex items-center gap-2 px-4 py-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                title="Sign out"
+              >
+                <LogOut className="w-4 h-4" />
+                <span className="hidden sm:inline">Sign Out</span>
+              </button>
             </div>
           </div>
-
-          <div className="flex items-center gap-4">
-            {getSubscriptionBadge()}
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500"
-              aria-label="Close dashboard"
-            >
-              <X className="w-5 h-5 text-gray-500" />
-            </button>
-          </div>
         </div>
+      </header>
 
-        <div className="flex flex-1 overflow-hidden">
+      <div className="max-w-7xl mx-auto px-4 lg:px-6 py-8">
+        <div className="flex gap-8">
           {/* Sidebar */}
-          <div className="w-64 bg-gray-50 border-r border-gray-200 p-6">
-            <nav className="space-y-2">
-              <button
-                onClick={() => setActiveTab('overview')}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${
-                  activeTab === 'overview' 
-                    ? 'bg-purple-100 text-purple-700' 
-                    : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                <BarChart3 className="w-5 h-5" />
-                Overview
-              </button>
-              
-              <button
-                onClick={() => setActiveTab('calls')}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${
-                  activeTab === 'calls' 
-                    ? 'bg-purple-100 text-purple-700' 
-                    : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                <Phone className="w-5 h-5" />
-                Call History
-              </button>
-              
-              <button
-                onClick={() => setActiveTab('settings')}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${
-                  activeTab === 'settings' 
-                    ? 'bg-purple-100 text-purple-700' 
-                    : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                <Settings className="w-5 h-5" />
-                Settings
-              </button>
-              
-              <button
-                onClick={() => setActiveTab('billing')}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${
-                  activeTab === 'billing' 
-                    ? 'bg-purple-100 text-purple-700' 
-                    : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                <Crown className="w-5 h-5" />
-                Billing
-              </button>
-            </nav>
+          <div className="w-64 flex-shrink-0">
+            <div className="bg-white rounded-xl border border-gray-200 p-6 sticky top-24">
+              <nav className="space-y-2">
+                <button
+                  onClick={() => setActiveTab('overview')}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${
+                    activeTab === 'overview' 
+                      ? 'bg-purple-100 text-purple-700' 
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  <BarChart3 className="w-5 h-5" />
+                  Overview
+                </button>
+                
+                <button
+                  onClick={() => setActiveTab('calls')}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${
+                    activeTab === 'calls' 
+                      ? 'bg-purple-100 text-purple-700' 
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  <Phone className="w-5 h-5" />
+                  Call History
+                </button>
+                
+                <button
+                  onClick={() => setActiveTab('settings')}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${
+                    activeTab === 'settings' 
+                      ? 'bg-purple-100 text-purple-700' 
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  <Settings className="w-5 h-5" />
+                  Settings
+                </button>
+                
+                <button
+                  onClick={() => setActiveTab('billing')}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${
+                    activeTab === 'billing' 
+                      ? 'bg-purple-100 text-purple-700' 
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  <Crown className="w-5 h-5" />
+                  Billing
+                </button>
+              </nav>
 
-            {/* Quick Stats */}
-            <div className="mt-8 p-4 bg-white rounded-xl border border-gray-200">
-              <h3 className="font-semibold text-gray-900 mb-3">Today's Activity</h3>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Calls Answered</span>
-                  <span className="font-medium">8</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Appointments</span>
-                  <span className="font-medium">3</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Avg Duration</span>
-                  <span className="font-medium">2:34</span>
+              {/* Quick Stats */}
+              <div className="mt-8 p-4 bg-gray-50 rounded-xl">
+                <h3 className="font-semibold text-gray-900 mb-3">Today's Activity</h3>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Calls Answered</span>
+                    <span className="font-medium">8</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Appointments</span>
+                    <span className="font-medium">3</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Avg Duration</span>
+                    <span className="font-medium">2:34</span>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
           {/* Main Content */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1">
             {activeTab === 'overview' && (
-              <div className="p-6 space-y-6">
+              <div className="space-y-6">
                 {/* Welcome Section */}
                 <div className="bg-gradient-to-r from-purple-500 to-blue-500 rounded-2xl p-6 text-white">
                   <div className="flex items-center justify-between">
@@ -513,7 +539,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onClose }) => {
             )}
 
             {activeTab === 'calls' && (
-              <div className="p-6 space-y-6">
+              <div className="space-y-6">
                 {/* Filters and Search */}
                 <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
                   <div className="flex items-center gap-4">
@@ -640,7 +666,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onClose }) => {
             )}
 
             {activeTab === 'settings' && (
-              <div className="p-6 space-y-6">
+              <div className="space-y-6">
                 {/* Business Information */}
                 <div className="bg-white rounded-xl border border-gray-200">
                   <div className="p-6 border-b border-gray-200">
@@ -801,7 +827,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onClose }) => {
             )}
 
             {activeTab === 'billing' && (
-              <div className="p-6 space-y-6">
+              <div className="space-y-6">
                 {/* Current Plan */}
                 <div className="bg-white rounded-xl border border-gray-200">
                   <div className="p-6 border-b border-gray-200">

@@ -7,11 +7,12 @@ import { Message } from '../types/user';
 import Logo from './Logo';
 
 interface OnboardingChatProps {
-  onClose: () => void;
-  locale?: string; // Add locale support for future localization
+  onComplete: () => void;
+  onSignOut: () => void;
+  locale?: string;
 }
 
-const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose, locale = 'en' }) => {
+const OnboardingChat: React.FC<OnboardingChatProps> = ({ onComplete, onSignOut, locale = 'en' }) => {
   const { user } = useAuth();
   const { onboarding, refetch: refetchOnboarding } = useOnboarding(user);
 
@@ -53,6 +54,13 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose, locale = 'en' 
       setupRealtimeSubscription();
     }
   }, [conversationId]);
+
+  // Check if onboarding is completed and trigger completion
+  useEffect(() => {
+    if (onboarding?.completed) {
+      onComplete();
+    }
+  }, [onboarding?.completed, onComplete]);
 
   const loadConversation = async () => {
     if (!user) return;
@@ -118,7 +126,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose, locale = 'en' 
       const errorMsg: Message = {
         id: `error-${Date.now()}`,
         conversation_id: 'error',
-        sender: 'system', // Keep for compatibility but role is primary
+        sender: 'system',
         role: 'system',
         content: `❌ **Connection Error**: ${errorMessage}\n\nPlease try refreshing the page or contact support if the problem persists.`,
         metadata: {},
@@ -200,7 +208,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose, locale = 'en' 
     const optimisticMessage: Message = {
       id: optimisticId,
       conversation_id: conversationId,
-      sender: 'user', // Keep for compatibility but role is primary
+      sender: 'user',
       role: 'user',
       content: userMessage,
       metadata: {},
@@ -255,7 +263,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose, locale = 'en' 
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
         conversation_id: conversationId,
-        sender: 'system', // Keep for compatibility but role is primary
+        sender: 'system',
         role: 'system',
         content: `❌ **Failed to send message**: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again.`,
         metadata: {},
@@ -278,8 +286,6 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose, locale = 'en' 
     setConnectionError(null);
     loadConversation();
   };
-
-
 
   // Calculate progress based on onboarding data
   const calculateProgress = () => {
@@ -310,7 +316,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose, locale = 'en' 
   // Show loading state while loading conversation
   if (isLoadingConversation) {
     return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl w-full max-w-4xl h-[90vh] flex items-center justify-center">
           <div className="text-center">
             <div className="w-12 h-12 border-4 border-purple-200 border-t-purple-500 rounded-full animate-spin mx-auto mb-4"></div>
@@ -322,14 +328,14 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose, locale = 'en' 
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" role="dialog" aria-labelledby="onboarding-title" aria-modal="true">
+    <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-4xl h-[90vh] flex flex-col shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div className="flex items-center gap-3">
             <Logo size="md" showText={false} />
             <div>
-              <h2 id="onboarding-title" className="text-xl font-bold text-gray-900">AI-Powered Setup</h2>
+              <h2 className="text-xl font-bold text-gray-900">AI-Powered Setup</h2>
               <p className="text-sm text-gray-500">
                 {connectionError ? (
                   <span className="text-red-500 flex items-center gap-1">
@@ -357,9 +363,9 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose, locale = 'en' 
             </div>
 
             <button
-              onClick={onClose}
+              onClick={onSignOut}
               className="p-2 hover:bg-gray-100 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500"
-              aria-label="Close setup dialog"
+              aria-label="Sign out"
             >
               <X className="w-5 h-5 text-gray-500" />
             </button>

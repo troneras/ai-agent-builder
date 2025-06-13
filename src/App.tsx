@@ -15,35 +15,45 @@ import { useUserProfile } from './hooks/useUserProfile';
 import { useOnboarding } from './hooks/useOnboarding';
 import { authHelpers } from './lib/supabase';
 
+type AppView = 'landing' | 'dashboard' | 'onboarding';
+
 function App() {
   const [showAuth, setShowAuth] = useState(false);
   const [authMode, setAuthMode] = useState<'register' | 'login' | 'forgot-password'>('register');
-  const [showOnboarding, setShowOnboarding] = useState(false);
-  const [showDashboard, setShowDashboard] = useState(false);
+  const [currentView, setCurrentView] = useState<AppView>('landing');
   const { user, loading } = useAuth();
   const { profile, loading: profileLoading } = useUserProfile(user);
   const { onboarding, loading: onboardingLoading } = useOnboarding(user);
 
-  // Auto-show onboarding if user is logged in but hasn't completed onboarding
+  // Auto-redirect logic when user state changes
   useEffect(() => {
-    if (user && onboarding && !onboardingLoading) {
-      if (!onboarding.completed) {
-        setShowOnboarding(true);
+    if (loading || profileLoading || onboardingLoading) return;
+
+    if (user) {
+      // User is logged in
+      if (onboarding?.completed) {
+        // Onboarding completed - go to dashboard
+        setCurrentView('dashboard');
+      } else {
+        // Onboarding not completed - go to onboarding
+        setCurrentView('onboarding');
       }
+    } else {
+      // User not logged in - go to landing
+      setCurrentView('landing');
     }
-  }, [user, onboarding, onboardingLoading]);
+  }, [user, onboarding, loading, profileLoading, onboardingLoading]);
 
   const handleStartBuilding = () => {
     if (user) {
-      // Check if onboarding is completed
+      // User is logged in, check onboarding status
       if (onboarding?.completed) {
-        // Show dashboard
-        setShowDashboard(true);
+        setCurrentView('dashboard');
       } else {
-        // Show onboarding
-        setShowOnboarding(true);
+        setCurrentView('onboarding');
       }
     } else {
+      // User not logged in, show registration
       setAuthMode('register');
       setShowAuth(true);
     }
@@ -56,30 +66,25 @@ function App() {
 
   const handleAuthComplete = () => {
     setShowAuth(false);
-    // Don't automatically show onboarding here - the useEffect will handle it
-    // This gives the onboarding time to load and the useEffect will trigger onboarding
+    // The useEffect will handle the redirect based on onboarding status
   };
 
   const handleAuthClose = () => {
     setShowAuth(false);
   };
 
-  const handleOnboardingClose = () => {
-    setShowOnboarding(false);
-    // If onboarding was completed, show dashboard
-    if (onboarding?.completed) {
-      setShowDashboard(true);
-    }
+  const handleOnboardingComplete = () => {
+    // When onboarding is completed, redirect to dashboard
+    setCurrentView('dashboard');
   };
 
-  const handleDashboardClose = () => {
-    setShowDashboard(false);
+  const handleBackToLanding = () => {
+    setCurrentView('landing');
   };
 
   const handleSignOut = async () => {
     await authHelpers.signOut();
-    setShowOnboarding(false);
-    setShowDashboard(false);
+    setCurrentView('landing');
   };
 
   // Show loading state while checking authentication and profile
@@ -91,6 +96,20 @@ function App() {
     );
   }
 
+  // Render based on current view
+  if (currentView === 'dashboard') {
+    return <Dashboard onBackToLanding={handleBackToLanding} onSignOut={handleSignOut} />;
+  }
+
+  if (currentView === 'onboarding') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600">
+        <OnboardingChat onComplete={handleOnboardingComplete} onSignOut={handleSignOut} />
+      </div>
+    );
+  }
+
+  // Landing page view
   return (
     <div className="relative">
       <ParticleBackground />
@@ -118,14 +137,6 @@ function App() {
           onComplete={handleAuthComplete}
           initialMode={authMode}
         />
-      )}
-
-      {showOnboarding && user && (
-        <OnboardingChat onClose={handleOnboardingClose} />
-      )}
-
-      {showDashboard && user && (
-        <Dashboard onClose={handleDashboardClose} />
       )}
     </div>
   );
