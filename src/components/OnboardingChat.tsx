@@ -24,7 +24,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose, locale = 'en' 
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const realtimeChannelRef = useRef<any>(null);
+  const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const optimisticMessageIdRef = useRef<string | null>(null);
 
   const scrollToBottom = () => {
@@ -151,31 +151,19 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose, locale = 'en' 
           const newMessage = payload.new as Message;
 
           setMessages(prev => {
-            // Remove optimistic message if this is the real version
-            if (optimisticMessageIdRef.current &&
-              newMessage.role === 'user' &&
-              newMessage.content === prev.find(m => m.id === optimisticMessageIdRef.current)?.content) {
+            // Check if this is a user message that should replace an optimistic message
+            if (newMessage.role === 'user' && optimisticMessageIdRef.current) {
+              const optimisticMessage = prev.find(m => m.id === optimisticMessageIdRef.current);
 
-              // Clear the optimistic message reference
-              optimisticMessageIdRef.current = null;
+              if (optimisticMessage && optimisticMessage.content === newMessage.content) {
+                // Clear the optimistic message reference
+                optimisticMessageIdRef.current = null;
 
-              // Replace optimistic message with real one
-              return prev.map(msg =>
-                msg.id.startsWith('optimistic-') && msg.role === 'user' && msg.content === newMessage.content
-                  ? newMessage
-                  : msg
-              ).filter((msg, index, arr) => {
-                // Remove any duplicate optimistic messages
-                if (msg.id.startsWith('optimistic-')) {
-                  return !arr.some((otherMsg, otherIndex) =>
-                    otherIndex > index &&
-                    !otherMsg.id.startsWith('optimistic-') &&
-                    otherMsg.content === msg.content &&
-                    otherMsg.role === msg.role
-                  );
-                }
-                return true;
-              });
+                // Replace the optimistic message with the real one
+                return prev.map(msg =>
+                  msg.id === optimisticMessage.id ? newMessage : msg
+                );
+              }
             }
 
             // Avoid duplicates for non-optimistic messages
