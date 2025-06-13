@@ -6,10 +6,8 @@ export interface UserProfile {
   business_type?: string;
   phone_number?: string;
   
-  // Onboarding
-  onboarding_completed: boolean;
-  onboarding_step: number;
-  onboarding_data: Record<string, any>;
+  // Business data - flexible JSON structure
+  business_data: Record<string, any>;
   
   // Subscription
   subscription_status: 'trial' | 'active' | 'cancelled' | 'expired' | 'past_due';
@@ -23,11 +21,51 @@ export interface UserProfile {
   updated_at: string;
 }
 
-export interface OnboardingData {
-  businessName?: string;
-  businessType?: string;
+export interface Onboarding {
+  id: string;
+  user_id: string;
+  conversation_id?: string;
+  
+  // Progress tracking
+  completed: boolean;
+  current_step: number;
+  
+  // Business information
+  user_name?: string;
+  business_name?: string;
+  business_type?: string;
+  business_city?: string;
+  full_address?: string;
+  phone_number?: string;
+  contact_email?: string;
+  website?: string;
+  opening_hours?: string;
   services?: string[];
-  hours?: string;
-  phoneStyle?: string;
-  phoneNumber?: string;
+  ai_use_cases?: string[];
+  
+  // Timestamps
+  started_at: string;
+  completed_at?: string;
+  updated_at: string;
+}
+
+export interface Conversation {
+  id: string;
+  user_id: string;
+  title: string;
+  type: 'onboarding' | 'support' | 'general';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Message {
+  id: string;
+  conversation_id: string;
+  sender: 'user' | 'assistant' | 'system' | 'tool';
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: string;
+  tool_name?: string;
+  tool_call_id?: string;
+  metadata: Record<string, any>;
+  created_at: string;
 }

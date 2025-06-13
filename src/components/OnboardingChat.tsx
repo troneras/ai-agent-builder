@@ -1,37 +1,27 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Send, User, ExternalLink, Bot, Search, Save, CheckCircle } from 'lucide-react';
-import { useUserProfile } from '../hooks/useUserProfile';
 import { useAuth } from '../hooks/useAuth';
+import { useOnboarding } from '../hooks/useOnboarding';
+import { supabase } from '../lib/supabase';
+import { Message } from '../types/user';
 import Logo from './Logo';
 
 interface OnboardingChatProps {
   onClose: () => void;
 }
 
-interface Message {
-  type: 'user' | 'assistant' | 'system' | 'tool';
-  content: string | React.ReactNode;
-  timestamp: Date;
-  id: string;
-  toolName?: string;
-}
-
 const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
   const { user } = useAuth();
-  const { profile, refetch } = useUserProfile(user);
+  const { onboarding, refetch: refetchOnboarding } = useOnboarding(user);
   
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentInput, setCurrentInput] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const [messageIdCounter, setMessageIdCounter] = useState(0);
-  const [isToolExecuting, setIsToolExecuting] = useState(false);
-  const [currentToolName, setCurrentToolName] = useState<string>('');
-  const [threadId, setThreadId] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [isLoadingConversation, setIsLoadingConversation] = useState(true);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -42,214 +32,99 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
   }, [messages]);
 
   useEffect(() => {
-    // Load existing conversation or start new one
-    loadOrStartConversation();
-  }, [profile]);
+    if (user) {
+      loadConversation();
+      setupRealtimeSubscription();
+    }
+  }, [user]);
 
-  const loadOrStartConversation = async () => {
+  const loadConversation = async () => {
     if (!user) return;
 
     try {
       setIsLoadingConversation(true);
 
-      // Check if there's an existing thread ID in the profile
-      const existingThreadId = profile?.onboarding_data?.thread_id;
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/onboarding-chat`;
       
-      if (existingThreadId && !profile?.onboarding_completed) {
-        // Restore existing conversation
-        await restoreConversation(existingThreadId);
-      } else {
-        // Start new conversation
-        await startNewConversation();
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'get_conversation',
+          userId: user.id
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load conversation');
       }
+
+      const data = await response.json();
+      setConversationId(data.conversationId);
+      setMessages(data.messages || []);
     } catch (error) {
       console.error('Error loading conversation:', error);
-      // Fallback to new conversation
-      await startNewConversation();
     } finally {
       setIsLoadingConversation(false);
     }
   };
 
-  const restoreConversation = async (existingThreadId: string) => {
-    try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/onboarding-chat`;
-      
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
+  const setupRealtimeSubscription = () => {
+    if (!conversationId) return;
+
+    const subscription = supabase
+      .channel('messages')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`
         },
-        body: JSON.stringify({
-          action: 'restore_conversation',
-          threadId: existingThreadId,
-          userId: user.id
-        })
-      });
+        (payload) => {
+          const newMessage = payload.new as Message;
+          setMessages(prev => {
+            // Avoid duplicates
+            if (prev.some(msg => msg.id === newMessage.id)) {
+              return prev;
+            }
+            return [...prev, newMessage];
+          });
+        }
+      )
+      .subscribe();
 
-      if (!response.ok) {
-        throw new Error('Failed to restore conversation');
-      }
-
-      const data = await response.json();
-      
-      if (data.messages && data.messages.length > 0) {
-        // Convert API messages to our message format
-        const restoredMessages = data.messages.map((msg: any, index: number) => ({
-          type: msg.role === 'user' ? 'user' : 'assistant',
-          content: msg.content,
-          timestamp: new Date(Date.now() - (data.messages.length - index) * 1000),
-          id: `restored-${index}`,
-        }));
-
-        setMessages(restoredMessages);
-        setThreadId(existingThreadId);
-        
-        // Add a restoration notice
-        addMessage('system', "💬 Welcome back! I've restored our previous conversation. Feel free to continue where we left off or ask me anything.");
-      } else {
-        // No messages found, start fresh
-        await startNewConversation();
-      }
-    } catch (error) {
-      console.error('Error restoring conversation:', error);
-      await startNewConversation();
-    }
-  };
-
-  const startNewConversation = async () => {
-    // Generate a new thread ID
-    const newThreadId = `thread_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    setThreadId(newThreadId);
-    
-    // Save thread ID to profile
-    await saveThreadId(newThreadId);
-    
-    // Start with welcome message
-    addMessage('assistant', "👋 Hi! I'm your Cutcall setup assistant. I'm here to help you get your AI phone assistant ready for your business. Let's start with something simple - what's your name?");
-  };
-
-  const saveThreadId = async (newThreadId: string) => {
-    if (!user) return;
-
-    try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/onboarding-chat`;
-      
-      await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action: 'save_thread_id',
-          threadId: newThreadId,
-          userId: user.id
-        })
-      });
-    } catch (error) {
-      console.error('Error saving thread ID:', error);
-    }
-  };
-
-  const generateMessageId = () => {
-    const id = `msg-${Date.now()}-${messageIdCounter}`;
-    setMessageIdCounter(prev => prev + 1);
-    return id;
-  };
-
-  const addMessage = (type: Message['type'], content: string | React.ReactNode, toolName?: string) => {
-    const messageId = generateMessageId();
-    const newMessage: Message = { 
-      type, 
-      content, 
-      timestamp: new Date(), 
-      id: messageId, 
-      toolName 
+    return () => {
+      subscription.unsubscribe();
     };
-    
-    setMessages(prev => [...prev, newMessage]);
-    return messageId;
-  };
-
-  const updateMessage = (messageId: string, content: string | React.ReactNode) => {
-    setMessages(prev => prev.map(msg => 
-      msg.id === messageId ? { ...msg, content } : msg
-    ));
-  };
-
-  const getToolIcon = (toolName: string) => {
-    if (toolName === 'web_search_tool') return <Search className="w-4 h-4" />;
-    if (toolName.startsWith('store_')) return <Save className="w-4 h-4" />;
-    if (toolName === 'complete_onboarding') return <CheckCircle className="w-4 h-4" />;
-    return <Bot className="w-4 h-4" />;
-  };
-
-  const getToolDescription = (toolName: string) => {
-    switch (toolName) {
-      case 'web_search_tool':
-        return 'Searching for your business information online...';
-      case 'store_user_name':
-        return 'Saving your name to your profile...';
-      case 'store_business_name':
-        return 'Saving your business name...';
-      case 'store_business_type':
-        return 'Saving your business type...';
-      case 'store_business_city':
-        return 'Saving your business location...';
-      case 'store_business_address':
-        return 'Saving your business address...';
-      case 'store_business_phone':
-        return 'Saving your phone number...';
-      case 'store_business_email':
-        return 'Saving your email address...';
-      case 'store_business_hours':
-        return 'Saving your business hours...';
-      case 'store_business_services':
-        return 'Saving your services list...';
-      case 'store_business_website':
-        return 'Saving your website information...';
-      case 'store_ai_use_cases':
-        return 'Saving your AI preferences...';
-      case 'complete_onboarding':
-        return 'Completing your setup...';
-      default:
-        return 'Processing...';
-    }
   };
 
   const handleSendMessage = async () => {
-    if (!currentInput.trim() || isTyping || !user || !threadId) return;
+    if (!currentInput.trim() || isSubmitting || !user || !conversationId) return;
 
     const userMessage = currentInput.trim();
-    
-    // Add user message immediately
-    addMessage('user', userMessage);
     setCurrentInput('');
-    setIsTyping(true);
+    setIsSubmitting(true);
+
+    // Add user message optimistically
+    const optimisticMessage: Message = {
+      id: `temp-${Date.now()}`,
+      conversation_id: conversationId,
+      sender: 'user',
+      role: 'user',
+      content: userMessage,
+      metadata: {},
+      created_at: new Date().toISOString()
+    };
+    setMessages(prev => [...prev, optimisticMessage]);
 
     try {
-      // Abort any existing request
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-
-      abortControllerRef.current = new AbortController();
-
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/onboarding-chat`;
       
-      // Prepare conversation history for API
-      const conversationHistory = messages
-        .filter(m => m.type === 'user' || m.type === 'assistant')
-        .map(m => ({
-          role: m.type === 'user' ? 'user' : 'assistant',
-          content: typeof m.content === 'string' ? m.content : ''
-        }));
-
-      // Add the new user message to history
-      conversationHistory.push({ role: 'user', content: userMessage });
-
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
@@ -257,121 +132,40 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          action: 'chat',
-          messages: conversationHistory,
-          threadId: threadId,
+          action: 'send_message',
+          message: userMessage,
           userId: user.id
-        }),
-        signal: abortControllerRef.current.signal
+        })
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error('Failed to send message');
       }
 
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
+      // Remove optimistic message since real one will come via realtime
+      setMessages(prev => prev.filter(msg => msg.id !== optimisticMessage.id));
 
-      if (!reader) {
-        throw new Error('No response body');
-      }
+      // Refresh onboarding data
+      refetchOnboarding();
 
-      let assistantMessage = '';
-      let currentAssistantMessageId: string | null = null;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              
-              if (data.content) {
-                // Handle streaming assistant message content
-                assistantMessage += data.content;
-                
-                if (!currentAssistantMessageId) {
-                  // Create new assistant message
-                  currentAssistantMessageId = addMessage('assistant', assistantMessage);
-                } else {
-                  // Update existing assistant message
-                  updateMessage(currentAssistantMessageId, assistantMessage);
-                }
-              } else if (data.tool_result && data.tool_name) {
-                // Handle tool execution result
-                setIsToolExecuting(false);
-                setCurrentToolName('');
-                addMessage('tool', data.tool_result, data.tool_name);
-                
-                // Refresh profile data after tool execution
-                if (data.tool_name.startsWith('store_') || data.tool_name === 'complete_onboarding') {
-                  refetch();
-                }
-                
-                // If onboarding is complete, show completion UI
-                if (data.tool_name === 'complete_onboarding') {
-                  setTimeout(() => {
-                    addMessage('assistant', 
-                      <div className="space-y-4">
-                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                          <h4 className="font-semibold text-green-800 mb-2">🎉 Setup Complete!</h4>
-                          <p className="text-sm text-green-700">
-                            Your AI phone assistant is now configured and ready to help your business!
-                          </p>
-                        </div>
-                        
-                        <div className="flex gap-2">
-                          <button 
-                            onClick={() => window.open('#', '_blank')}
-                            className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                            aria-label="View dashboard in new tab"
-                          >
-                            View Dashboard <ExternalLink className="w-4 h-4" aria-hidden="true" />
-                          </button>
-                          <button 
-                            onClick={onClose}
-                            className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500"
-                            aria-label="Close setup dialog"
-                          >
-                            Close
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  }, 1000);
-                }
-              } else if (data.tool_name && !data.tool_result) {
-                // Tool execution started
-                setIsToolExecuting(true);
-                setCurrentToolName(data.tool_name);
-              } else if (data.error) {
-                console.error('Stream error:', data.error);
-                addMessage('assistant', `❌ Sorry, I encountered an error: ${data.error}`);
-              }
-            } catch (parseError) {
-              console.error('Parse error:', parseError);
-            }
-          }
-        }
-      }
-
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        console.log('Request aborted');
-        return;
-      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+      // Remove optimistic message on error
+      setMessages(prev => prev.filter(msg => msg.id !== optimisticMessage.id));
       
-      console.error('Chat error:', error);
-      addMessage('assistant', '❌ Sorry, I encountered an error. Please try again.');
+      // Add error message
+      const errorMessage: Message = {
+        id: `error-${Date.now()}`,
+        conversation_id: conversationId,
+        sender: 'system',
+        role: 'system',
+        content: '❌ Failed to send message. Please try again.',
+        metadata: {},
+        created_at: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, errorMessage]);
     } finally {
-      setIsTyping(false);
-      setIsToolExecuting(false);
-      setCurrentToolName('');
+      setIsSubmitting(false);
     }
   };
 
@@ -382,18 +176,49 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
     }
   };
 
-  // Calculate progress based on profile data
+  const getToolIcon = (toolName: string) => {
+    if (toolName === 'web_search_tool') return <Search className="w-4 h-4" />;
+    if (toolName?.startsWith('store_')) return <Save className="w-4 h-4" />;
+    if (toolName === 'complete_onboarding') return <CheckCircle className="w-4 h-4" />;
+    return <Bot className="w-4 h-4" />;
+  };
+
+  const getToolDescription = (toolName: string) => {
+    switch (toolName) {
+      case 'web_search_tool':
+        return 'Searching for your business information online...';
+      case 'store_user_info':
+        return 'Saving your personal information...';
+      case 'store_business_info':
+        return 'Saving your business information...';
+      case 'store_contact_info':
+        return 'Saving your contact details...';
+      case 'store_business_details':
+        return 'Saving your business details...';
+      case 'store_ai_preferences':
+        return 'Saving your AI preferences...';
+      case 'complete_onboarding':
+        return 'Completing your setup...';
+      default:
+        return 'Processing...';
+    }
+  };
+
+  // Calculate progress based on onboarding data
   const calculateProgress = () => {
-    if (!profile?.onboarding_data) return 0;
+    if (!onboarding) return 0;
     
-    const data = profile.onboarding_data;
     const fields = [
       'user_name', 'business_name', 'business_type', 'business_city',
       'full_address', 'phone_number', 'contact_email', 'opening_hours',
       'services', 'ai_use_cases'
     ];
     
-    const completedFields = fields.filter(field => data[field]).length;
+    const completedFields = fields.filter(field => {
+      const value = onboarding[field as keyof typeof onboarding];
+      return value && (Array.isArray(value) ? value.length > 0 : true);
+    }).length;
+    
     return Math.round((completedFields / fields.length) * 100);
   };
 
@@ -423,7 +248,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
             <div>
               <h2 id="onboarding-title" className="text-xl font-bold text-gray-900">AI-Powered Setup</h2>
               <p className="text-sm text-gray-500">
-                {threadId ? `Thread: ${threadId.slice(-8)}` : 'Let our AI assistant help you configure your phone assistant'}
+                {conversationId ? `Conversation: ${conversationId.slice(-8)}` : 'Setting up your phone assistant'}
               </p>
             </div>
           </div>
@@ -454,23 +279,23 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
           {messages.map((message) => (
             <div
               key={message.id}
-              className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              <div className={`flex gap-3 max-w-[80%] ${message.type === 'user' ? 'flex-row-reverse' : ''}`}>
+              <div className={`flex gap-3 max-w-[80%] ${message.sender === 'user' ? 'flex-row-reverse' : ''}`}>
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  message.type === 'user' 
+                  message.sender === 'user' 
                     ? 'bg-purple-500' 
-                    : message.type === 'tool'
+                    : message.sender === 'tool'
                     ? 'bg-blue-500'
-                    : message.type === 'system'
+                    : message.sender === 'system'
                     ? 'bg-green-500'
                     : 'bg-gradient-to-r from-purple-500 to-blue-500'
                 }`} aria-hidden="true">
-                  {message.type === 'user' ? (
+                  {message.sender === 'user' ? (
                     <User className="w-4 h-4 text-white" />
-                  ) : message.type === 'tool' ? (
-                    getToolIcon(message.toolName || '')
-                  ) : message.type === 'system' ? (
+                  ) : message.sender === 'tool' ? (
+                    getToolIcon(message.tool_name || '')
+                  ) : message.sender === 'system' ? (
                     <CheckCircle className="w-4 h-4 text-white" />
                   ) : (
                     <Bot className="w-4 h-4 text-white" />
@@ -478,72 +303,56 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
                 </div>
                 
                 <div className={`rounded-2xl px-6 py-4 ${
-                  message.type === 'user'
+                  message.sender === 'user'
                     ? 'bg-purple-500 text-white'
-                    : message.type === 'tool'
+                    : message.sender === 'tool'
                     ? 'bg-blue-50 text-blue-800 border border-blue-200'
-                    : message.type === 'system'
+                    : message.sender === 'system'
                     ? 'bg-green-50 text-green-800 border border-green-200'
                     : 'bg-gray-50 text-gray-900'
-                }`} role={message.type === 'user' ? 'note' : 'status'} aria-label={`${message.type === 'user' ? 'Your' : message.type === 'tool' ? 'Tool' : message.type === 'system' ? 'System' : 'Assistant'} message`}>
+                }`} role={message.sender === 'user' ? 'note' : 'status'} aria-label={`${message.sender === 'user' ? 'Your' : message.sender === 'tool' ? 'Tool' : message.sender === 'system' ? 'System' : 'Assistant'} message`}>
                   
-                  {message.type === 'tool' && message.toolName && (
+                  {message.sender === 'tool' && message.tool_name && (
                     <div className="flex items-center gap-2 mb-2 text-sm font-medium">
-                      {getToolIcon(message.toolName)}
-                      {getToolDescription(message.toolName)}
+                      {getToolIcon(message.tool_name)}
+                      {getToolDescription(message.tool_name)}
                     </div>
                   )}
                   
-                  {typeof message.content === 'string' ? (
-                    <div 
-                      className="leading-relaxed prose prose-sm max-w-none"
-                      dangerouslySetInnerHTML={{ 
-                        __html: message.content
-                          .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                          .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                          .replace(/\n/g, '<br>')
-                      }}
-                    />
-                  ) : (
-                    message.content
-                  )}
+                  <div 
+                    className="leading-relaxed prose prose-sm max-w-none"
+                    dangerouslySetInnerHTML={{ 
+                      __html: message.content
+                        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                        .replace(/\n/g, '<br>')
+                    }}
+                  />
                   
                   <div className={`text-xs mt-2 ${
-                    message.type === 'user' ? 'text-purple-100' : 
-                    message.type === 'tool' ? 'text-blue-600' : 
-                    message.type === 'system' ? 'text-green-600' : 'text-gray-500'
+                    message.sender === 'user' ? 'text-purple-100' : 
+                    message.sender === 'tool' ? 'text-blue-600' : 
+                    message.sender === 'system' ? 'text-green-600' : 'text-gray-500'
                   }`}>
-                    {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </div>
                 </div>
               </div>
             </div>
           ))}
           
-          {(isTyping || isToolExecuting) && (
+          {isSubmitting && (
             <div className="flex justify-start">
               <div className="flex gap-3">
                 <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center" aria-hidden="true">
                   <Bot className="w-4 h-4 text-white" />
                 </div>
                 <div className="bg-gray-50 rounded-2xl px-6 py-4" aria-label="Assistant is working">
-                  {isToolExecuting ? (
-                    <div className="flex items-center gap-2 text-blue-600">
-                      {getToolIcon(currentToolName)}
-                      <span className="text-sm">{getToolDescription(currentToolName)}</span>
-                      <div className="typing-indicator ml-2">
-                        <div className="typing-dot" style={{ '--delay': '0ms' } as React.CSSProperties}></div>
-                        <div className="typing-dot" style={{ '--delay': '150ms' } as React.CSSProperties}></div>
-                        <div className="typing-dot" style={{ '--delay': '300ms' } as React.CSSProperties}></div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="typing-indicator">
-                      <div className="typing-dot" style={{ '--delay': '0ms' } as React.CSSProperties}></div>
-                      <div className="typing-dot" style={{ '--delay': '150ms' } as React.CSSProperties}></div>
-                      <div className="typing-dot" style={{ '--delay': '300ms' } as React.CSSProperties}></div>
-                    </div>
-                  )}
+                  <div className="typing-indicator">
+                    <div className="typing-dot" style={{ '--delay': '0ms' } as React.CSSProperties}></div>
+                    <div className="typing-dot" style={{ '--delay': '150ms' } as React.CSSProperties}></div>
+                    <div className="typing-dot" style={{ '--delay': '300ms' } as React.CSSProperties}></div>
+                  </div>
                   <span className="sr-only">Assistant is working on your request</span>
                 </div>
               </div>
@@ -567,12 +376,12 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
               className="flex-1 resize-none border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
               rows={1}
               aria-describedby="input-help"
-              disabled={isTyping || isToolExecuting || !threadId}
+              disabled={isSubmitting || !conversationId}
             />
             <div id="input-help" className="sr-only">Press Enter to send your message</div>
             <button
               onClick={handleSendMessage}
-              disabled={!currentInput.trim() || isTyping || isToolExecuting || !threadId}
+              disabled={!currentInput.trim() || isSubmitting || !conversationId}
               className="bg-gradient-to-r from-purple-500 to-blue-500 text-white p-3 rounded-xl hover:from-purple-600 hover:to-blue-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-purple-500"
               aria-label="Send message"
             >
@@ -581,7 +390,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose }) => {
           </div>
           
           <div className="mt-2 text-xs text-gray-500 text-center">
-            {threadId ? `Thread ID: ${threadId} • ` : ''}Powered by AI • Your data is secure and private
+            {conversationId ? `Conversation ID: ${conversationId} • ` : ''}Powered by AI • Your data is secure and private
           </div>
         </div>
       </div>

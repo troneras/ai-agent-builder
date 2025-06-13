@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Menu, X, LogIn, User, LogOut, Crown, Clock } from 'lucide-react';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 import { useUserProfile } from '../hooks/useUserProfile';
+import { useOnboarding } from '../hooks/useOnboarding';
 import Logo from './Logo';
 
 interface HeaderProps {
@@ -13,6 +14,7 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ onStartBuilding, onShowAuth, user, onSignOut }) => {
   const { profile } = useUserProfile(user);
+  const { onboarding } = useOnboarding(user);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('');
@@ -188,7 +190,7 @@ const Header: React.FC<HeaderProps> = ({ onStartBuilding, onShowAuth, user, onSi
                       {profile && (
                         <div className="flex items-center justify-between mt-2">
                           {getSubscriptionBadge()}
-                          {!profile.onboarding_completed && (
+                          {onboarding && !onboarding.completed && (
                             <div className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded">
                               Setup incomplete
                             </div>
@@ -205,7 +207,7 @@ const Header: React.FC<HeaderProps> = ({ onStartBuilding, onShowAuth, user, onSi
                       className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2"
                     >
                       <User className="w-4 h-4" />
-                      {profile?.onboarding_completed ? 'Dashboard' : 'Complete Setup'}
+                      {onboarding?.completed ? 'Dashboard' : 'Complete Setup'}
                     </button>
                     
                     <hr className="my-2 border-gray-100" />
@@ -324,7 +326,7 @@ const Header: React.FC<HeaderProps> = ({ onStartBuilding, onShowAuth, user, onSi
                       className="w-full text-left text-gray-700 hover:text-purple-600 font-medium py-2 transition-colors focus:outline-none flex items-center gap-2"
                     >
                       <User className="w-4 h-4" />
-                      {profile?.onboarding_completed ? 'Dashboard' : 'Complete Setup'}
+                      {onboarding?.completed ? 'Dashboard' : 'Complete Setup'}
                     </button>
                     
                     <button

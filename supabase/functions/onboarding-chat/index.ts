@@ -13,22 +13,6 @@ interface ChatMessage {
   name?: string
 }
 
-interface OnboardingData {
-  user_name?: string
-  business_name?: string
-  business_type?: string
-  business_city?: string
-  full_address?: string
-  phone_number?: string
-  contact_email?: string
-  website?: string
-  opening_hours?: string
-  services?: string[]
-  ai_use_cases?: string[]
-  onboarding_completed?: boolean
-  thread_id?: string
-}
-
 const SYSTEM_PROMPT = `You are Cutcall's friendly onboarding assistant. Your job is to help business owners set up their AI phone assistant by gathering essential information about their business.
 
 CRITICAL RULES:
@@ -73,8 +57,8 @@ const tools = [
   {
     type: "function",
     function: {
-      name: "store_user_name",
-      description: "Store the user's name after confirmation",
+      name: "store_user_info",
+      description: "Store the user's personal information after confirmation",
       parameters: {
         type: "object",
         properties: {
@@ -93,7 +77,8 @@ const tools = [
         type: "object",
         properties: {
           business_name: { type: "string", description: "The business name" },
-          business_type: { type: "string", description: "Type of business (e.g., restaurant, salon, plumbing)" }
+          business_type: { type: "string", description: "Type of business (e.g., restaurant, salon, plumbing)" },
+          business_city: { type: "string", description: "City where the business is located" }
         },
         required: ["business_name", "business_type"]
       }
@@ -108,8 +93,9 @@ const tools = [
         type: "object",
         properties: {
           phone_number: { type: "string", description: "Business phone number" },
-          email: { type: "string", description: "Business email address" },
-          full_address: { type: "string", description: "Complete business address" }
+          contact_email: { type: "string", description: "Business email address" },
+          full_address: { type: "string", description: "Complete business address" },
+          website: { type: "string", description: "Business website URL" }
         }
       }
     }
@@ -118,7 +104,7 @@ const tools = [
     type: "function",
     function: {
       name: "store_business_details",
-      description: "Store business hours, services, and website after confirmation",
+      description: "Store business hours and services after confirmation",
       parameters: {
         type: "object",
         properties: {
@@ -127,8 +113,7 @@ const tools = [
             type: "array", 
             items: { type: "string" },
             description: "List of services offered by the business" 
-          },
-          website: { type: "string", description: "Business website URL" }
+          }
         }
       }
     }
@@ -183,7 +168,7 @@ const tools = [
   }
 ]
 
-async function callOpenAI(messages: ChatMessage[], stream: boolean = true) {
+async function callOpenAI(messages: ChatMessage[], stream: boolean = false) {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -238,23 +223,74 @@ async function callSearchModel(query: string) {
   return data.choices[0].message.content
 }
 
-async function getCurrentProfileData(supabase: any, userId: string) {
+async function addMessageToConversation(supabase: any, conversationId: string, sender: string, role: string, content: string, toolName?: string, toolCallId?: string, metadata?: any) {
   try {
     const { data, error } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('id', userId)
+      .from('messages')
+      .insert({
+        conversation_id: conversationId,
+        sender,
+        role,
+        content,
+        tool_name: toolName,
+        tool_call_id: toolCallId,
+        metadata: metadata || {}
+      })
+      .select()
       .single()
 
     if (error) {
-      console.error('Error fetching profile:', error)
+      console.error('Error adding message:', error)
       return null
     }
 
     return data
   } catch (err) {
-    console.error('Profile fetch error:', err)
+    console.error('Message insert error:', err)
     return null
+  }
+}
+
+async function getConversationMessages(supabase: any, conversationId: string) {
+  try {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: true })
+
+    if (error) {
+      console.error('Error fetching messages:', error)
+      return []
+    }
+
+    return data || []
+  } catch (err) {
+    console.error('Messages fetch error:', err)
+    return []
+  }
+}
+
+async function updateOnboardingData(supabase: any, userId: string, updates: any) {
+  try {
+    const { data, error } = await supabase
+      .from('onboarding')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', userId)
+      .select()
+
+    if (error) {
+      console.error('Onboarding update error:', error)
+      return { success: false, error: error.message }
+    }
+
+    return { success: true, data }
+  } catch (err) {
+    console.error('Onboarding update error:', err)
+    return { success: false, error: 'Failed to update onboarding' }
   }
 }
 
@@ -270,7 +306,7 @@ async function updateUserProfile(supabase: any, userId: string, updates: any) {
       .select()
 
     if (error) {
-      console.error('Database update error:', error)
+      console.error('Profile update error:', error)
       return { success: false, error: error.message }
     }
 
@@ -281,46 +317,16 @@ async function updateUserProfile(supabase: any, userId: string, updates: any) {
   }
 }
 
-async function updateOnboardingData(supabase: any, userId: string, updates: Partial<OnboardingData>) {
-  try {
-    // Get current onboarding data
-    const currentProfile = await getCurrentProfileData(supabase, userId)
-    const currentOnboardingData = currentProfile?.onboarding_data || {}
-    
-    // Merge with new data
-    const mergedOnboardingData = { ...currentOnboardingData, ...updates }
-
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .update({
-        onboarding_data: mergedOnboardingData,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', userId)
-      .select()
-
-    if (error) {
-      console.error('Onboarding data update error:', error)
-      return { success: false, error: error.message }
-    }
-
-    return { success: true, data }
-  } catch (err) {
-    console.error('Onboarding data update error:', err)
-    return { success: false, error: 'Failed to update onboarding data' }
-  }
-}
-
-async function completeUserOnboarding(supabase: any, userId: string) {
+async function completeOnboarding(supabase: any, userId: string) {
   try {
     const { data, error } = await supabase
-      .from('user_profiles')
+      .from('onboarding')
       .update({
-        onboarding_completed: true,
-        onboarding_step: -1,
+        completed: true,
+        completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
-      .eq('id', userId)
+      .eq('user_id', userId)
       .select()
 
     if (error) {
@@ -335,7 +341,7 @@ async function completeUserOnboarding(supabase: any, userId: string) {
   }
 }
 
-async function handleToolCall(toolCall: any, supabase: any, userId: string) {
+async function handleToolCall(toolCall: any, supabase: any, userId: string, conversationId: string) {
   const { name, arguments: args } = toolCall.function
   const parsedArgs = JSON.parse(args)
 
@@ -343,7 +349,7 @@ async function handleToolCall(toolCall: any, supabase: any, userId: string) {
 
   try {
     switch (name) {
-      case 'store_user_name':
+      case 'store_user_info':
         await updateUserProfile(supabase, userId, { 
           full_name: parsedArgs.user_name 
         })
@@ -360,9 +366,13 @@ async function handleToolCall(toolCall: any, supabase: any, userId: string) {
         })
         await updateOnboardingData(supabase, userId, { 
           business_name: parsedArgs.business_name,
-          business_type: parsedArgs.business_type
+          business_type: parsedArgs.business_type,
+          business_city: parsedArgs.business_city
         })
         toolResult = `✅ Stored business info: ${parsedArgs.business_name} (${parsedArgs.business_type})`
+        if (parsedArgs.business_city) {
+          toolResult += ` in ${parsedArgs.business_city}`
+        }
         break
 
       case 'store_contact_info':
@@ -373,11 +383,14 @@ async function handleToolCall(toolCall: any, supabase: any, userId: string) {
           contactUpdates.phone_number = parsedArgs.phone_number
           onboardingContactUpdates.phone_number = parsedArgs.phone_number
         }
-        if (parsedArgs.email) {
-          onboardingContactUpdates.contact_email = parsedArgs.email
+        if (parsedArgs.contact_email) {
+          onboardingContactUpdates.contact_email = parsedArgs.contact_email
         }
         if (parsedArgs.full_address) {
           onboardingContactUpdates.full_address = parsedArgs.full_address
+        }
+        if (parsedArgs.website) {
+          onboardingContactUpdates.website = parsedArgs.website
         }
 
         if (Object.keys(contactUpdates).length > 0) {
@@ -387,8 +400,9 @@ async function handleToolCall(toolCall: any, supabase: any, userId: string) {
         
         const contactItems = []
         if (parsedArgs.phone_number) contactItems.push(`phone: ${parsedArgs.phone_number}`)
-        if (parsedArgs.email) contactItems.push(`email: ${parsedArgs.email}`)
+        if (parsedArgs.contact_email) contactItems.push(`email: ${parsedArgs.contact_email}`)
         if (parsedArgs.full_address) contactItems.push(`address: ${parsedArgs.full_address}`)
+        if (parsedArgs.website) contactItems.push(`website: ${parsedArgs.website}`)
         
         toolResult = `✅ Stored contact info: ${contactItems.join(', ')}`
         break
@@ -396,14 +410,12 @@ async function handleToolCall(toolCall: any, supabase: any, userId: string) {
       case 'store_business_details':
         await updateOnboardingData(supabase, userId, {
           opening_hours: parsedArgs.opening_hours,
-          services: parsedArgs.services,
-          website: parsedArgs.website
+          services: parsedArgs.services
         })
         
         const detailItems = []
         if (parsedArgs.opening_hours) detailItems.push(`hours: ${parsedArgs.opening_hours}`)
         if (parsedArgs.services) detailItems.push(`services: ${parsedArgs.services.join(', ')}`)
-        if (parsedArgs.website) detailItems.push(`website: ${parsedArgs.website}`)
         
         toolResult = `✅ Stored business details: ${detailItems.join(', ')}`
         break
@@ -422,159 +434,42 @@ async function handleToolCall(toolCall: any, supabase: any, userId: string) {
         break
 
       case 'complete_onboarding':
-        await completeUserOnboarding(supabase, userId)
+        await completeOnboarding(supabase, userId)
         toolResult = `🎉 Onboarding completed successfully! Your AI phone assistant is now ready to help your business.`
         break
 
       default:
         toolResult = `❌ Unknown tool: ${name}`
     }
+
+    // Add tool message to conversation
+    await addMessageToConversation(
+      supabase,
+      conversationId,
+      'tool',
+      'tool',
+      toolResult,
+      name,
+      toolCall.id
+    )
+
   } catch (error) {
     console.error(`Tool execution error for ${name}:`, error)
     toolResult = `❌ Error executing ${name}: ${error.message}`
+    
+    // Add error message to conversation
+    await addMessageToConversation(
+      supabase,
+      conversationId,
+      'tool',
+      'tool',
+      toolResult,
+      name,
+      toolCall.id
+    )
   }
 
   return toolResult
-}
-
-async function processStreamWithToolCalls(
-  response: Response, 
-  controller: ReadableStreamDefaultController,
-  supabase: any,
-  userId: string,
-  conversationMessages: ChatMessage[]
-) {
-  const reader = response.body?.getReader()
-  const decoder = new TextDecoder()
-
-  if (!reader) {
-    controller.close()
-    return conversationMessages
-  }
-
-  let buffer = ''
-  let currentToolCalls: any[] = []
-  let assistantMessage = ''
-  let hasContent = false
-
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() || ''
-
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const data = line.slice(6)
-        if (data === '[DONE]') continue
-
-        try {
-          const parsed = JSON.parse(data)
-          const delta = parsed.choices?.[0]?.delta
-
-          if (delta?.tool_calls) {
-            // Handle tool calls
-            for (const toolCall of delta.tool_calls) {
-              if (!currentToolCalls[toolCall.index]) {
-                currentToolCalls[toolCall.index] = {
-                  id: toolCall.id,
-                  type: toolCall.type,
-                  function: { name: '', arguments: '' }
-                }
-              }
-
-              if (toolCall.function?.name) {
-                currentToolCalls[toolCall.index].function.name += toolCall.function.name
-              }
-              if (toolCall.function?.arguments) {
-                currentToolCalls[toolCall.index].function.arguments += toolCall.function.arguments
-              }
-            }
-          } else if (delta?.content) {
-            // Stream regular content
-            assistantMessage += delta.content
-            hasContent = true
-            const chunk = `data: ${JSON.stringify({ content: delta.content })}\n\n`
-            controller.enqueue(new TextEncoder().encode(chunk))
-          }
-
-          // Check if tool calls are complete
-          if (parsed.choices?.[0]?.finish_reason === 'tool_calls' && currentToolCalls.length > 0) {
-            // Add assistant message with tool calls to conversation
-            conversationMessages.push({
-              role: 'assistant',
-              content: assistantMessage || null,
-            })
-
-            // Execute tool calls and add to conversation
-            const toolMessages: ChatMessage[] = []
-            
-            for (const toolCall of currentToolCalls) {
-              if (toolCall.function.name && toolCall.function.arguments) {
-                // Send tool start notification to frontend
-                const toolStartChunk = `data: ${JSON.stringify({ 
-                  tool_name: toolCall.function.name 
-                })}\n\n`
-                controller.enqueue(new TextEncoder().encode(toolStartChunk))
-
-                const toolResult = await handleToolCall(toolCall, supabase, userId)
-
-                // Add tool result to conversation
-                toolMessages.push({
-                  role: 'tool',
-                  content: toolResult,
-                  tool_call_id: toolCall.id,
-                  name: toolCall.function.name
-                })
-
-                // Send tool completion notification to frontend
-                const toolChunk = `data: ${JSON.stringify({ 
-                  tool_result: toolResult,
-                  tool_name: toolCall.function.name 
-                })}\n\n`
-                controller.enqueue(new TextEncoder().encode(toolChunk))
-              }
-            }
-
-            conversationMessages.push(...toolMessages)
-
-            // Now call OpenAI again to get the assistant's response to the tool results
-            const followUpMessages: ChatMessage[] = [
-              { role: 'system', content: SYSTEM_PROMPT },
-              ...conversationMessages
-            ]
-
-            const followUpResponse = await callOpenAI(followUpMessages, true)
-            
-            // Recursively process the follow-up response
-            conversationMessages = await processStreamWithToolCalls(
-              followUpResponse, 
-              controller, 
-              supabase, 
-              userId, 
-              conversationMessages
-            )
-
-            return conversationMessages
-          }
-        } catch (parseError) {
-          console.error('Parse error:', parseError)
-        }
-      }
-    }
-  }
-
-  // If we had content but no tool calls, add the assistant message
-  if (hasContent) {
-    conversationMessages.push({
-      role: 'assistant',
-      content: assistantMessage
-    })
-  }
-
-  return conversationMessages
 }
 
 Deno.serve(async (req: Request) => {
@@ -583,7 +478,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { action, messages, threadId, userId } = await req.json()
+    const { action, message, userId } = await req.json()
 
     if (!userId) {
       return new Response(
@@ -600,77 +495,130 @@ Deno.serve(async (req: Request) => {
 
     // Handle different actions
     switch (action) {
-      case 'save_thread_id':
-        if (!threadId) {
+      case 'get_conversation':
+        // Get or create onboarding conversation
+        const { data: conversationId, error: convError } = await supabase
+          .rpc('get_or_create_onboarding_conversation', { p_user_id: userId })
+
+        if (convError) {
+          console.error('Error getting conversation:', convError)
           return new Response(
-            JSON.stringify({ error: 'Thread ID is required' }),
+            JSON.stringify({ error: 'Failed to get conversation' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        // Get conversation messages
+        const messages = await getConversationMessages(supabase, conversationId)
+
+        return new Response(
+          JSON.stringify({ 
+            conversationId,
+            messages: messages.map(msg => ({
+              id: msg.id,
+              sender: msg.sender,
+              role: msg.role,
+              content: msg.content,
+              tool_name: msg.tool_name,
+              created_at: msg.created_at
+            }))
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+
+      case 'send_message':
+        if (!message) {
+          return new Response(
+            JSON.stringify({ error: 'Message is required' }),
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           )
         }
 
-        const saveResult = await updateOnboardingData(supabase, userId, { thread_id: threadId })
-        return new Response(
-          JSON.stringify({ success: saveResult.success }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
+        // Get conversation ID
+        const { data: convId, error: getConvError } = await supabase
+          .rpc('get_or_create_onboarding_conversation', { p_user_id: userId })
 
-      case 'restore_conversation':
-        // Since we removed conversation history, just return empty messages
-        return new Response(
-          JSON.stringify({ messages: [] }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-
-      case 'chat':
-        if (!messages || !threadId) {
+        if (getConvError) {
+          console.error('Error getting conversation:', getConvError)
           return new Response(
-            JSON.stringify({ error: 'Messages and thread ID are required' }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            JSON.stringify({ error: 'Failed to get conversation' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           )
         }
 
-        // Prepare messages with system prompt
-        const fullMessages: ChatMessage[] = [
+        // Add user message to conversation
+        await addMessageToConversation(supabase, convId, 'user', 'user', message)
+
+        // Get conversation history for OpenAI
+        const conversationMessages = await getConversationMessages(supabase, convId)
+        
+        // Convert to OpenAI format (exclude tool messages for simplicity)
+        const openAIMessages: ChatMessage[] = [
           { role: 'system', content: SYSTEM_PROMPT },
-          ...messages
+          ...conversationMessages
+            .filter(msg => msg.sender !== 'tool')
+            .map(msg => ({
+              role: msg.role as 'user' | 'assistant' | 'system',
+              content: msg.content
+            }))
         ]
 
-        // Call OpenAI API with streaming
-        const response = await callOpenAI(fullMessages, true)
+        // Call OpenAI
+        const response = await callOpenAI(openAIMessages, false)
+        const data = await response.json()
 
-        // Create a readable stream for SSE
-        const stream = new ReadableStream({
-          async start(controller) {
-            try {
-              let conversationMessages = [...messages]
-              
-              // Process the stream with tool call handling
-              conversationMessages = await processStreamWithToolCalls(
-                response,
-                controller,
-                supabase,
-                userId,
-                conversationMessages
-              )
-
-            } catch (error) {
-              console.error('Stream error:', error)
-              const errorChunk = `data: ${JSON.stringify({ error: error.message })}\n\n`
-              controller.enqueue(new TextEncoder().encode(errorChunk))
-            } finally {
-              controller.close()
+        if (data.choices && data.choices[0]) {
+          const choice = data.choices[0]
+          
+          if (choice.message.tool_calls) {
+            // Handle tool calls
+            let assistantContent = choice.message.content || ''
+            
+            // Add assistant message if there's content
+            if (assistantContent) {
+              await addMessageToConversation(supabase, convId, 'assistant', 'assistant', assistantContent)
             }
-          }
-        })
 
-        return new Response(stream, {
-          headers: {
-            ...corsHeaders,
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
-          },
-        })
+            // Execute tool calls
+            for (const toolCall of choice.message.tool_calls) {
+              await handleToolCall(toolCall, supabase, userId, convId)
+            }
+
+            // Get updated conversation and call OpenAI again for follow-up response
+            const updatedMessages = await getConversationMessages(supabase, convId)
+            const updatedOpenAIMessages: ChatMessage[] = [
+              { role: 'system', content: SYSTEM_PROMPT },
+              ...updatedMessages
+                .filter(msg => msg.sender !== 'tool')
+                .map(msg => ({
+                  role: msg.role as 'user' | 'assistant' | 'system',
+                  content: msg.content
+                }))
+            ]
+
+            const followUpResponse = await callOpenAI(updatedOpenAIMessages, false)
+            const followUpData = await followUpResponse.json()
+
+            if (followUpData.choices && followUpData.choices[0] && followUpData.choices[0].message.content) {
+              await addMessageToConversation(
+                supabase, 
+                convId, 
+                'assistant', 
+                'assistant', 
+                followUpData.choices[0].message.content
+              )
+            }
+
+          } else if (choice.message.content) {
+            // Regular assistant response
+            await addMessageToConversation(supabase, convId, 'assistant', 'assistant', choice.message.content)
+          }
+        }
+
+        return new Response(
+          JSON.stringify({ success: true }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
 
       default:
         return new Response(

@@ -70,25 +70,6 @@ export const useUserProfile = (user: User | null) => {
     }
   };
 
-  const updateOnboardingStep = async (step: number, data?: Record<string, any>) => {
-    const updates: Partial<UserProfile> = {
-      onboarding_step: step,
-      ...(data && { onboarding_data: { ...profile?.onboarding_data, ...data } })
-    };
-
-    return updateProfile(updates);
-  };
-
-  const completeOnboarding = async (finalData?: Record<string, any>) => {
-    const updates: Partial<UserProfile> = {
-      onboarding_completed: true,
-      onboarding_step: -1, // -1 indicates completed
-      ...(finalData && { onboarding_data: { ...profile?.onboarding_data, ...finalData } })
-    };
-
-    return updateProfile(updates);
-  };
-
   const updateSubscription = async (
     status: UserProfile['subscription_status'],
     plan?: UserProfile['subscription_plan'],
@@ -126,8 +107,6 @@ export const useUserProfile = (user: User | null) => {
     loading,
     error,
     updateProfile,
-    updateOnboardingStep,
-    completeOnboarding,
     updateSubscription,
     isTrialExpired,
     getTrialDaysRemaining,

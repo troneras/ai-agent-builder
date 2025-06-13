@@ -11,6 +11,7 @@ import OnboardingChat from './components/OnboardingChat';
 import ParticleBackground from './components/ParticleBackground';
 import { useAuth } from './hooks/useAuth';
 import { useUserProfile } from './hooks/useUserProfile';
+import { useOnboarding } from './hooks/useOnboarding';
 import { authHelpers } from './lib/supabase';
 
 function App() {
@@ -19,20 +20,21 @@ function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const { user, loading } = useAuth();
   const { profile, loading: profileLoading } = useUserProfile(user);
+  const { onboarding, loading: onboardingLoading } = useOnboarding(user);
 
   // Auto-show onboarding if user is logged in but hasn't completed onboarding
   useEffect(() => {
-    if (user && profile && !profileLoading) {
-      if (!profile.onboarding_completed) {
+    if (user && onboarding && !onboardingLoading) {
+      if (!onboarding.completed) {
         setShowOnboarding(true);
       }
     }
-  }, [user, profile, profileLoading]);
+  }, [user, onboarding, onboardingLoading]);
 
   const handleStartBuilding = () => {
     if (user) {
       // Check if onboarding is completed
-      if (profile?.onboarding_completed) {
+      if (onboarding?.completed) {
         // Redirect to dashboard (for now just show a message)
         alert('Dashboard coming soon! Your phone assistant is ready to use.');
       } else {
@@ -53,7 +55,7 @@ function App() {
   const handleAuthComplete = () => {
     setShowAuth(false);
     // Don't automatically show onboarding here - the useEffect will handle it
-    // This gives the profile time to load and the useEffect will trigger onboarding
+    // This gives the onboarding time to load and the useEffect will trigger onboarding
   };
 
   const handleAuthClose = () => {
@@ -70,7 +72,7 @@ function App() {
   };
 
   // Show loading state while checking authentication and profile
-  if (loading || (user && profileLoading)) {
+  if (loading || (user && (profileLoading || onboardingLoading))) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center">
         <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin"></div>
