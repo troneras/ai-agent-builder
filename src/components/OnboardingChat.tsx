@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Send, User, Bot, Search, Save, CheckCircle, AlertCircle } from 'lucide-react';
+import { X, Send, User, Bot, AlertCircle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useOnboarding } from '../hooks/useOnboarding';
 import { supabase } from '../lib/supabase';
@@ -279,33 +279,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose, locale = 'en' 
     loadConversation();
   };
 
-  const getToolIcon = (toolName: string) => {
-    if (toolName === 'web_search_tool') return <Search className="w-4 h-4" />;
-    if (toolName?.startsWith('store_')) return <Save className="w-4 h-4" />;
-    if (toolName === 'complete_onboarding') return <CheckCircle className="w-4 h-4" />;
-    return <Bot className="w-4 h-4" />;
-  };
 
-  const getToolDescription = (toolName: string) => {
-    switch (toolName) {
-      case 'web_search_tool':
-        return 'Searching for your business information online...';
-      case 'store_user_info':
-        return 'Saving your personal information...';
-      case 'store_business_info':
-        return 'Saving your business information...';
-      case 'store_contact_info':
-        return 'Saving your contact details...';
-      case 'store_business_details':
-        return 'Saving your business details...';
-      case 'store_ai_preferences':
-        return 'Saving your AI preferences...';
-      case 'complete_onboarding':
-        return 'Completing your setup...';
-      default:
-        return 'Processing...';
-    }
-  };
 
   // Calculate progress based on onboarding data
   const calculateProgress = () => {
@@ -327,21 +301,10 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose, locale = 'en' 
 
   const progress = calculateProgress();
 
-  // Filter messages to skip irrelevant tool messages
+  // Filter messages to hide all tool messages from users
   const filteredMessages = Array.isArray(messages) ? messages.filter((message) => {
-    if (message.role !== 'tool') return true;
-    // Show tool messages only if they have a known tool_name or non-empty content
-    const hasContent = message.content && message.content.trim() !== '' && message.content !== '{}' && message.content !== 'null';
-    const knownTool = message.tool_name && [
-      'web_search_tool',
-      'store_user_info',
-      'store_business_info',
-      'store_contact_info',
-      'store_business_details',
-      'store_ai_preferences',
-      'complete_onboarding',
-    ].includes(message.tool_name);
-    return hasContent || knownTool;
+    // Hide all tool messages - users don't need to see internal AI processing
+    return message.role !== 'tool';
   }) : [];
 
   // Show loading state while loading conversation
@@ -429,7 +392,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose, locale = 'en' 
             const id = message.id || `msg-${idx}`;
             const content = typeof message.content === 'string' ? message.content : '';
             const createdAt = message.created_at ? new Date(message.created_at) : new Date();
-            const toolName = message.tool_name || '';
+
             return (
               <div
                 key={id}
@@ -438,16 +401,12 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose, locale = 'en' 
                 <div className={`flex gap-3 max-w-[80%] ${role === 'user' ? 'flex-row-reverse' : ''}`}>
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${role === 'user'
                     ? 'bg-purple-500'
-                    : role === 'tool'
-                      ? 'bg-blue-500'
-                      : role === 'system'
-                        ? 'bg-red-500'
-                        : 'bg-gradient-to-r from-purple-500 to-blue-500'
+                    : role === 'system'
+                      ? 'bg-red-500'
+                      : 'bg-gradient-to-r from-purple-500 to-blue-500'
                     } ${id.startsWith('optimistic-') ? 'opacity-70' : ''}`} aria-hidden="true">
                     {role === 'user' ? (
                       <User className="w-4 h-4 text-white" />
-                    ) : role === 'tool' ? (
-                      getToolIcon(toolName)
                     ) : role === 'system' ? (
                       <AlertCircle className="w-4 h-4 text-white" />
                     ) : (
@@ -457,19 +416,10 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose, locale = 'en' 
 
                   <div className={`rounded-2xl px-6 py-4 ${role === 'user'
                     ? 'bg-purple-500 text-white'
-                    : role === 'tool'
-                      ? 'bg-blue-50 text-blue-800 border border-blue-200'
-                      : role === 'system'
-                        ? 'bg-red-50 text-red-800 border border-red-200'
-                        : 'bg-gray-50 text-gray-900'
-                    } ${id.startsWith('optimistic-') ? 'opacity-70' : ''}`} role={role === 'user' ? 'note' : 'status'} aria-label={`${role === 'user' ? 'Your' : role === 'tool' ? 'Tool' : role === 'system' ? 'System' : 'Assistant'} message`}>
-
-                    {role === 'tool' && toolName && (
-                      <div className="flex items-center gap-2 mb-2 text-sm font-medium">
-                        {getToolIcon(toolName)}
-                        {getToolDescription(toolName)}
-                      </div>
-                    )}
+                    : role === 'system'
+                      ? 'bg-red-50 text-red-800 border border-red-200'
+                      : 'bg-gray-50 text-gray-900'
+                    } ${id.startsWith('optimistic-') ? 'opacity-70' : ''}`} role={role === 'user' ? 'note' : 'status'} aria-label={`${role === 'user' ? 'Your' : role === 'system' ? 'System' : 'Assistant'} message`}>
 
                     <div
                       className="leading-relaxed prose prose-sm max-w-none"
@@ -482,8 +432,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onClose, locale = 'en' 
                     />
 
                     <div className={`text-xs mt-2 ${role === 'user' ? 'text-purple-100' :
-                      role === 'tool' ? 'text-blue-600' :
-                        role === 'system' ? 'text-red-600' : 'text-gray-500'
+                      role === 'system' ? 'text-red-600' : 'text-gray-500'
                       }`}>
                       {createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       {id.startsWith('optimistic-') && <span className="ml-1">⏳</span>}
