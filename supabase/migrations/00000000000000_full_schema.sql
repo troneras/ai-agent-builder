@@ -42,6 +42,7 @@ CREATE TABLE messages (
   tool_call_id text,
   tool_result jsonb,
   metadata jsonb DEFAULT '{}',
+  artifacts jsonb,
   created_at timestamptz DEFAULT now(),
   tool_calls jsonb,
   message_order integer NOT NULL DEFAULT 0,

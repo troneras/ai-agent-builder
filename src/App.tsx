@@ -22,7 +22,7 @@ function App() {
   const [authMode, setAuthMode] = useState<'register' | 'login' | 'forgot-password'>('register');
   const [currentView, setCurrentView] = useState<AppView>('landing');
   const { user, loading } = useAuth();
-  const { profile, loading: profileLoading } = useUserProfile(user);
+  const { loading: profileLoading } = useUserProfile(user);
   const { onboarding, loading: onboardingLoading } = useOnboarding(user);
 
   // Auto-redirect logic when user state changes
@@ -113,14 +113,14 @@ function App() {
   return (
     <div className="relative">
       <ParticleBackground />
-      
-      <Header 
-        onStartBuilding={handleStartBuilding} 
+
+      <Header
+        onStartBuilding={handleStartBuilding}
         onShowAuth={handleShowAuth}
         user={user}
         onSignOut={handleSignOut}
       />
-      
+
       <main className="relative z-10">
         <HeroSection onStartBuilding={handleStartBuilding} />
         <FeaturesSection />
@@ -132,7 +132,7 @@ function App() {
       <Footer />
 
       {showAuth && (
-        <AuthForm 
+        <AuthForm
           onClose={handleAuthClose}
           onComplete={handleAuthComplete}
           initialMode={authMode}

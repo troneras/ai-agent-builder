@@ -31,7 +31,14 @@ const SYSTEM_PROMPT =
 You need to collect information about their business and preferences.
 Use the available tools to store information as you collect it.
 Be friendly and professional, using emojis occasionally to make the conversation engaging.
-Format your responses using markdown for better readability.` as const;
+Format your responses using markdown for better readability.
+
+When you want the user to select from a set of options, include an artifacts array with an option_choice object. This provides a better user experience with clickable buttons. For example:
+- When asking about business type, provide common options like "Restaurant", "Retail", "Professional Services", etc.
+- When asking about AI use cases, provide the available options as buttons
+- When asking about preferences, provide yes/no options or multiple choice options
+
+Always include both the question in your text response AND the options in the artifacts array.` as const;
 
 // Localized welcome messages
 const WELCOME_MESSAGES = {
@@ -232,10 +239,28 @@ const tools = [
   },
 ] as const;
 
-// Response format schema
+const optionChoiceArtifactSchema = z.object({
+  type: z.literal("option_choice").describe("The type of artifact."),
+  prompt: z.string().describe("The prompt to show the user."),
+  options: z.array(z.object({
+    label: z.string().describe("The option label."),
+    value: z.string().describe("The value to return if chosen."),
+  })).describe("The list of options."),
+  allowFreeText: z.boolean().describe(
+    "Whether to allow free-text answers.",
+  ),
+}).describe(
+  "An artifact that allows the user to choose an option from a list.",
+).strict();
+
+const artifactSchema = z.discriminatedUnion("type", [
+  optionChoiceArtifactSchema,
+  // other artifact types...
+]);
+
 export const responseFormatSchema = z.object({
   text: z.string().describe("The user-facing message content."),
-  artifacts: z.string().describe(
+  artifacts: z.array(artifactSchema).describe(
     "Optional UI artifacts for advanced rendering. Structure reserved for future use.",
   ),
 }).strict();
@@ -669,11 +694,14 @@ Deno.serve(async (req: Request) => {
 
       // Parse structured response
       let responseContent = "";
+      let responseArtifacts = null;
       if (response.content) {
         const parsedResponse = handleChatResponse(
           safeJsonParse(response.content),
         );
+        console.log("Parsed response:", parsedResponse);
         responseContent = parsedResponse?.text ?? response.content;
+        responseArtifacts = parsedResponse?.artifacts ?? null;
       }
 
       let nextOrder = currentOrder + 1;
@@ -697,6 +725,7 @@ Deno.serve(async (req: Request) => {
             role: "assistant",
             content: responseContent,
             tool_calls: toolCalls,
+            artifacts: responseArtifacts,
             message_order: nextOrder,
             created_at: new Date().toISOString(),
             token_count: completion.usage?.completion_tokens ?? null,
@@ -722,6 +751,7 @@ Deno.serve(async (req: Request) => {
               conversation_id: typedConversation.id,
               role: "assistant",
               content: responseContent,
+              artifacts: responseArtifacts,
               message_order: nextOrder,
               created_at: new Date().toISOString(),
               token_count: completion.usage?.completion_tokens ?? null,
@@ -803,12 +833,14 @@ Deno.serve(async (req: Request) => {
 
         // Parse final structured response
         let finalResponseContent = "";
+        let finalResponseArtifacts = null;
         if (finalResponse.content) {
           const parsedFinalResponse = handleChatResponse(
             safeJsonParse(finalResponse.content),
           );
           finalResponseContent = parsedFinalResponse?.text ??
             finalResponse.content;
+          finalResponseArtifacts = parsedFinalResponse?.artifacts ?? null;
         }
 
         // Save the final assistant response
@@ -819,6 +851,7 @@ Deno.serve(async (req: Request) => {
               conversation_id: typedConversation.id,
               role: "assistant",
               content: finalResponseContent,
+              artifacts: finalResponseArtifacts,
               message_order: nextOrder,
               created_at: new Date().toISOString(),
               token_count: finalCompletion.usage?.completion_tokens ?? null,
@@ -840,6 +873,7 @@ Deno.serve(async (req: Request) => {
             conversation_id: typedConversation.id,
             role: "assistant",
             content: responseContent,
+            artifacts: responseArtifacts,
             message_order: nextOrder,
             created_at: new Date().toISOString(),
             token_count: completion.usage?.completion_tokens ?? null,

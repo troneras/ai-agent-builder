@@ -3,7 +3,7 @@ import { X, Send, User, Bot, AlertCircle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useOnboarding } from '../hooks/useOnboarding';
 import { supabase } from '../lib/supabase';
-import { Message } from '../types/user';
+import { Message, OptionChoiceArtifact } from '../types/user';
 import Logo from './Logo';
 
 interface OnboardingChatProps {
@@ -24,17 +24,36 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onComplete, onSignOut, 
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  const optimisticMessageIdRef = useRef<string | null>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = (smooth: boolean = true) => {
+    if (messagesContainerRef.current) {
+      // Use requestAnimationFrame to ensure DOM updates are complete
+      requestAnimationFrame(() => {
+        if (messagesContainerRef.current) {
+          const container = messagesContainerRef.current;
+          if (smooth) {
+            container.scrollTo({
+              top: container.scrollHeight,
+              behavior: 'smooth'
+            });
+          } else {
+            container.scrollTop = container.scrollHeight;
+          }
+        }
+      });
+    }
   };
 
   useEffect(() => {
-    scrollToBottom();
+    // Only use smooth scroll for non-optimistic updates
+    const hasOptimisticMessage = messages.some(msg => msg.id.startsWith('optimistic-'));
+    scrollToBottom(!hasOptimisticMessage);
   }, [messages]);
+
+
 
   useEffect(() => {
     if (user) {
@@ -159,22 +178,7 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onComplete, onSignOut, 
           const newMessage = payload.new as Message;
 
           setMessages(prev => {
-            // Check if this is a user message that should replace an optimistic message
-            if (newMessage.role === 'user' && optimisticMessageIdRef.current) {
-              const optimisticMessage = prev.find(m => m.id === optimisticMessageIdRef.current);
-
-              if (optimisticMessage && optimisticMessage.content === newMessage.content) {
-                // Clear the optimistic message reference
-                optimisticMessageIdRef.current = null;
-
-                // Replace the optimistic message with the real one
-                return prev.map(msg =>
-                  msg.id === optimisticMessage.id ? newMessage : msg
-                );
-              }
-            }
-
-            // Avoid duplicates for non-optimistic messages
+            // Avoid duplicates
             if (prev.some(msg => msg.id === newMessage.id)) {
               return prev;
             }
@@ -203,23 +207,8 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onComplete, onSignOut, 
     setCurrentInput('');
     setIsSubmitting(true);
 
-    // Create optimistic message with unique ID
-    const optimisticId = `optimistic-${Date.now()}-${Math.random()}`;
-    const optimisticMessage: Message = {
-      id: optimisticId,
-      conversation_id: conversationId,
-      sender: 'user',
-      role: 'user',
-      content: userMessage,
-      metadata: {},
-      created_at: new Date().toISOString()
-    };
-
-    // Store reference to optimistic message
-    optimisticMessageIdRef.current = optimisticId;
-
-    // Add optimistic message immediately
-    setMessages(prev => [...prev, optimisticMessage]);
+    // Temporarily disable optimistic messages to fix chat functionality
+    // TODO: Re-implement optimistic messages properly later
 
     try {
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/onboarding-chat`;
@@ -254,10 +243,6 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onComplete, onSignOut, 
 
     } catch (error) {
       console.error('Error sending message:', error);
-
-      // Remove optimistic message on error
-      setMessages(prev => prev.filter(msg => msg.id !== optimisticId));
-      optimisticMessageIdRef.current = null;
 
       // Add error message
       const errorMessage: Message = {
@@ -307,10 +292,104 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onComplete, onSignOut, 
 
   const progress = calculateProgress();
 
+  // Handle artifact option selection
+  const handleOptionChoice = async (option: { label: string; value: string }) => {
+    if (!user || isSubmitting || !conversationId || connectionError) return;
+
+    setCurrentInput(option.value);
+    setIsSubmitting(true);
+
+    try {
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/onboarding-chat`;
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'send_message',
+          message: option.value,
+          userId: user.id,
+          locale: locale
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to send message (${response.status}): ${errorText}`);
+      }
+
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      // Clear the input after successful send
+      setCurrentInput('');
+
+      // Refresh onboarding data
+      refetchOnboarding();
+
+    } catch (error) {
+      console.error('Error sending option choice:', error);
+
+      // Add error message
+      const errorMessage: Message = {
+        id: `error-${Date.now()}`,
+        conversation_id: conversationId,
+        sender: 'system',
+        role: 'system',
+        content: `❌ **Failed to send selection**: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again.`,
+        metadata: {},
+        created_at: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Render option choice artifact
+  const renderOptionChoiceArtifact = (artifact: OptionChoiceArtifact) => {
+    return (
+      <div className="mt-4 p-4 bg-white rounded-lg border border-gray-200">
+        <p className="text-sm text-gray-700 mb-3">{artifact.prompt}</p>
+        <div className="flex flex-wrap gap-2">
+          {artifact.options.map((option, index) => (
+            <button
+              key={index}
+              onClick={() => handleOptionChoice(option)}
+              className="px-4 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500"
+              disabled={isSubmitting}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        {artifact.allowFreeText && (
+          <p className="text-xs text-gray-500 mt-2">
+            You can also type your own response in the input below.
+          </p>
+        )}
+      </div>
+    );
+  };
+
   // Filter messages to hide all tool messages from users
   const filteredMessages = Array.isArray(messages) ? messages.filter((message) => {
     // Hide all tool messages - users don't need to see internal AI processing
-    return message.role !== 'tool';
+    if (message.role === 'tool') return false;
+
+    // Hide messages with empty or invalid content
+    if (!message.content || typeof message.content !== 'string' || message.content.trim() === '') return false;
+
+    // Hide messages without proper structure
+    if (!message || typeof message !== 'object') return false;
+
+    return true;
   }) : [];
 
   // Show loading state while loading conversation
@@ -391,12 +470,11 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onComplete, onSignOut, 
         )}
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4" role="log" aria-label="Setup conversation" aria-live="polite">
-          {(filteredMessages || []).map((message, idx) => {
-            if (!message || typeof message !== 'object') return null;
+        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-6 space-y-4 min-h-0" role="log" aria-label="Setup conversation" aria-live="polite">
+          {filteredMessages.map((message, idx) => {
             const role = message.role || 'assistant';
             const id = message.id || `msg-${idx}`;
-            const content = typeof message.content === 'string' ? message.content : '';
+            const content = message.content;
             const createdAt = message.created_at ? new Date(message.created_at) : new Date();
 
             return (
@@ -436,6 +514,22 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onComplete, onSignOut, 
                           .replace(/\n/g, '<br>')
                       }}
                     />
+
+                    {/* Render artifacts if present */}
+                    {message.artifacts && message.artifacts.length > 0 && (
+                      <div className="mt-3">
+                        {message.artifacts.map((artifact, artifactIndex) => {
+                          if (artifact.type === 'option_choice') {
+                            return (
+                              <div key={artifactIndex}>
+                                {renderOptionChoiceArtifact(artifact)}
+                              </div>
+                            );
+                          }
+                          return null;
+                        })}
+                      </div>
+                    )}
 
                     <div className={`text-xs mt-2 ${role === 'user' ? 'text-purple-100' :
                       role === 'system' ? 'text-red-600' : 'text-gray-500'
