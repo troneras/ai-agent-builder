@@ -3,7 +3,7 @@ import { X, Send, User, Bot, AlertCircle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useOnboarding } from '../hooks/useOnboarding';
 import { supabase } from '../lib/supabase';
-import { Message, OptionChoiceArtifact } from '../types/user';
+import { Message, OptionChoiceArtifact, OAuthConnectionArtifact } from '../types/user';
 import Logo from './Logo';
 
 interface OnboardingChatProps {
@@ -88,40 +88,22 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onComplete, onSignOut, 
       setIsLoadingConversation(true);
       setConnectionError(null);
 
-      // Validate environment variables
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      console.log('Loading conversation for user:', user.id);
 
-      if (!supabaseUrl || !supabaseAnonKey) {
-        throw new Error('Missing Supabase configuration. Please check your environment variables.');
-      }
-
-      const apiUrl = `${supabaseUrl}/functions/v1/onboarding-chat`;
-
-      console.log('Attempting to connect to:', apiUrl);
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${supabaseAnonKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      const { data, error } = await supabase.functions.invoke('onboarding-chat', {
+        body: {
           action: 'get_conversation',
           userId: user.id,
           locale: locale
-        })
+        }
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('API Response Error:', response.status, errorText);
-        throw new Error(`API Error (${response.status}): ${errorText || 'Failed to load conversation'}`);
+      if (error) {
+        console.error('Function invoke error:', error);
+        throw new Error(`Failed to load conversation: ${error.message}`);
       }
 
-      const data = await response.json();
-
-      if (data.error) {
+      if (data?.error) {
         throw new Error(data.error);
       }
 
@@ -211,30 +193,20 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onComplete, onSignOut, 
     // TODO: Re-implement optimistic messages properly later
 
     try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/onboarding-chat`;
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      const { data, error } = await supabase.functions.invoke('onboarding-chat', {
+        body: {
           action: 'send_message',
           message: userMessage,
           userId: user.id,
           locale: locale
-        })
+        }
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to send message (${response.status}): ${errorText}`);
+      if (error) {
+        throw new Error(`Failed to send message: ${error.message}`);
       }
 
-      const data = await response.json();
-
-      if (data.error) {
+      if (data?.error) {
         throw new Error(data.error);
       }
 
@@ -300,30 +272,20 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onComplete, onSignOut, 
     setIsSubmitting(true);
 
     try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/onboarding-chat`;
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      const { data, error } = await supabase.functions.invoke('onboarding-chat', {
+        body: {
           action: 'send_message',
           message: option.value,
           userId: user.id,
           locale: locale
-        })
+        }
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to send message (${response.status}): ${errorText}`);
+      if (error) {
+        throw new Error(`Failed to send message: ${error.message}`);
       }
 
-      const data = await response.json();
-
-      if (data.error) {
+      if (data?.error) {
         throw new Error(data.error);
       }
 
@@ -374,6 +336,247 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onComplete, onSignOut, 
             You can also type your own response in the input below.
           </p>
         )}
+      </div>
+    );
+  };
+
+  // Handle OAuth connection initiation
+  const handleOAuthConnection = async (artifact: OAuthConnectionArtifact) => {
+    console.log('🚀 [OAuth] Starting OAuth connection process', {
+      integrationName: artifact.integrationName,
+      integrationId: artifact.integrationId,
+      userId: user?.id,
+      isSubmitting,
+      timestamp: new Date().toISOString()
+    });
+
+    if (!user || isSubmitting) {
+      console.warn('⚠️ [OAuth] Cannot proceed - missing user or already submitting', {
+        hasUser: !!user,
+        isSubmitting,
+        userId: user?.id
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+    console.log('✅ [OAuth] Set submitting state to true');
+
+    try {
+      console.log('📡 [OAuth] Invoking nango-oauth function', {
+        action: 'create_session',
+        integrationId: artifact.integrationId,
+        userId: user.id,
+      });
+
+      const { data, error } = await supabase.functions.invoke('nango-oauth', {
+        body: {
+          action: 'create_session',
+          integrationId: artifact.integrationId,
+          userId: user.id,
+        }
+      });
+
+      console.log('📨 [OAuth] Supabase function response', {
+        hasData: !!data,
+        hasError: !!error,
+        dataKeys: data ? Object.keys(data) : [],
+        data: data ? JSON.stringify(data, null, 2) : null,
+        error: error ? JSON.stringify(error, null, 2) : null,
+        responseType: typeof data,
+        dataLength: data && typeof data === 'object' ? Object.keys(data).length : 0
+      });
+
+      if (error) {
+        console.error('❌ [OAuth] Supabase function returned error', error);
+        throw new Error(`Failed to create session: ${error.message}`);
+      }
+
+      if (data?.error) {
+        console.error('❌ [OAuth] Function data contains error', data.error);
+        throw new Error(data.error);
+      }
+
+      const { sessionToken } = data;
+      console.log('🎫 [OAuth] Session token received', {
+        hasSessionToken: !!sessionToken,
+        sessionTokenLength: sessionToken?.length,
+        sessionTokenPreview: sessionToken ? `${sessionToken.substring(0, 10)}...` : null
+      });
+
+      if (!sessionToken) {
+        throw new Error('No session token received from server');
+      }
+
+      console.log('📦 [OAuth] Importing Nango frontend SDK...');
+      // Import Nango frontend SDK dynamically
+      const { default: Nango } = await import('@nangohq/frontend');
+      console.log('✅ [OAuth] Nango SDK imported successfully');
+
+      console.log('🔧 [OAuth] Creating Nango instance...');
+      const nango = new Nango();
+      console.log('✅ [OAuth] Nango instance created', {
+        nangoMethods: Object.getOwnPropertyNames(nango).filter(prop => typeof nango[prop as keyof typeof nango] === 'function')
+      });
+
+      // Check browser environment
+      console.log('🌐 [OAuth] Browser environment check', {
+        userAgent: navigator.userAgent,
+        cookieEnabled: navigator.cookieEnabled,
+        onLine: navigator.onLine,
+        windowLocation: window.location.origin,
+        hasLocalStorage: typeof localStorage !== 'undefined',
+        hasSessionStorage: typeof sessionStorage !== 'undefined',
+        popupBlocker: 'Will be tested when opening popup'
+      });
+
+      console.log('🪟 [OAuth] Opening Nango Connect UI...');
+      const connect = nango.openConnectUI({
+        onEvent: (event: { type: string; payload?: unknown }) => {
+          console.log('🎯 [OAuth] Nango event received', {
+            type: event.type,
+            payload: event.payload,
+            timestamp: new Date().toISOString()
+          });
+
+          if (event.type === 'close') {
+            console.log('🔐 [OAuth] OAuth modal closed by user');
+            setIsSubmitting(false);
+          } else if (event.type === 'connect') {
+            console.log('🎉 [OAuth] OAuth connection successful!');
+            // The webhook will handle sending a message to chat
+            setIsSubmitting(false);
+          } else if (event.type === 'error') {
+            console.error('❌ [OAuth] OAuth error event', event.payload);
+            setIsSubmitting(false);
+          } else if (event.type === 'loaded') {
+            console.log('📋 [OAuth] OAuth UI loaded');
+          } else if (event.type === 'provider_selected') {
+            console.log('🎯 [OAuth] Provider selected', event.payload);
+          } else {
+            console.log('ℹ️ [OAuth] Unknown event type', event.type, event.payload);
+          }
+        },
+      });
+
+      console.log('✅ [OAuth] Connect UI opened, setting session token...');
+      connect.setSessionToken(sessionToken);
+      console.log('🎫 [OAuth] Session token set successfully');
+
+      // Test popup functionality
+      console.log('🧪 [OAuth] Testing popup capabilities...');
+      try {
+        const testPopup = window.open('', '_blank', 'width=1,height=1');
+        if (testPopup) {
+          console.log('✅ [OAuth] Popup test successful - browser allows popups');
+          testPopup.close();
+        } else {
+          console.warn('⚠️ [OAuth] Popup test failed - popup may be blocked');
+        }
+      } catch (popupError) {
+        console.error('❌ [OAuth] Popup test error', popupError);
+      }
+
+      // Additional debug info with multiple checkpoints
+      setTimeout(() => {
+        console.log('⏰ [OAuth] 2-second checkpoint - UI should be initializing');
+      }, 2000);
+
+      setTimeout(() => {
+        console.log('⏰ [OAuth] 5-second checkpoint - OAuth provider should be visible');
+
+        // Check for any error elements or hidden modals
+        const nangoModal = document.querySelector('[data-nango-modal]') || document.querySelector('.nango-modal') || document.querySelector('#nango-modal');
+        const anyModal = document.querySelector('[role="dialog"]') || document.querySelector('.modal');
+
+        console.log('🔍 [OAuth] DOM inspection', {
+          nangoModal: nangoModal ? 'found' : 'not found',
+          anyModal: anyModal ? 'found' : 'not found',
+          bodyChildren: document.body.children.length,
+          documentTitle: document.title,
+          visibilityState: document.visibilityState,
+          hasFocus: document.hasFocus()
+        });
+
+        if (nangoModal) {
+          console.log('👀 [OAuth] Nango modal found', {
+            visible: nangoModal.getBoundingClientRect().width > 0,
+            display: window.getComputedStyle(nangoModal).display,
+            visibility: window.getComputedStyle(nangoModal).visibility,
+            zIndex: window.getComputedStyle(nangoModal).zIndex
+          });
+        }
+      }, 5000);
+
+      setTimeout(() => {
+        console.log('⏰ [OAuth] 10-second checkpoint - final status check');
+      }, 10000);
+
+    } catch (error) {
+      console.error('💥 [OAuth] Error in OAuth flow', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : null,
+        integrationName: artifact.integrationName,
+        integrationId: artifact.integrationId,
+        timestamp: new Date().toISOString()
+      });
+
+      // Add error message to chat
+      const errorMessage: Message = {
+        id: `error-${Date.now()}`,
+        conversation_id: conversationId!,
+        sender: 'system',
+        role: 'system',
+        content: `❌ **Failed to start ${artifact.integrationName} connection**: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again or contact support if the problem persists.`,
+        metadata: {},
+        created_at: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+      setIsSubmitting(false);
+    }
+  };
+
+  // Render OAuth connection artifact
+  const renderOAuthConnectionArtifact = (artifact: OAuthConnectionArtifact) => {
+    return (
+      <div className="mt-4 p-4 bg-white rounded-lg border border-gray-200">
+        <div className="flex items-start gap-4">
+          <div className="flex-shrink-0 w-12 h-12">
+            <img
+              src={`/icons/${artifact.icon || 'default'}.svg`}
+              alt={`${artifact.integrationName} icon`}
+              className="w-full h-full rounded-lg"
+              onError={(e) => {
+                // Fallback to a default icon if the specific icon fails to load
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          </div>
+          <div className="flex-1">
+            <h4 className="text-lg font-semibold text-gray-900 mb-2">
+              Connect to {artifact.integrationName}
+            </h4>
+            <p className="text-sm text-gray-600 mb-4">
+              {artifact.description}
+            </p>
+            <button
+              onClick={() => handleOAuthConnection(artifact)}
+              disabled={isSubmitting}
+              className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg hover:from-purple-600 hover:to-blue-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-purple-500"
+            >
+              {isSubmitting ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Connecting...
+                </>
+              ) : (
+                <>
+                  Connect {artifact.integrationName}
+                </>
+              )}
+            </button>
+          </div>
+        </div>
       </div>
     );
   };
@@ -523,6 +726,12 @@ const OnboardingChat: React.FC<OnboardingChatProps> = ({ onComplete, onSignOut, 
                             return (
                               <div key={artifactIndex}>
                                 {renderOptionChoiceArtifact(artifact)}
+                              </div>
+                            );
+                          } else if (artifact.type === 'oauth_connection') {
+                            return (
+                              <div key={artifactIndex}>
+                                {renderOAuthConnectionArtifact(artifact)}
                               </div>
                             );
                           }

@@ -38,7 +38,16 @@ When you want the user to select from a set of options, include an artifacts arr
 - When asking about AI use cases, provide the available options as buttons
 - When asking about preferences, provide yes/no options or multiple choice options
 
-Always include both the question in your text response AND the options in the artifacts array.` as const;
+Always include both the question in your text response AND the options in the artifacts array.
+
+**IMPORTANT: Only return ONE artifact at a time.** If you need to collect multiple pieces of information, ask for them sequentially, one at a time. Do not include multiple artifacts in a single response.
+
+**Available Integrations:**
+You can suggest connecting to external services that would benefit the user's business:
+- **Square** (squareup-sandbox): For businesses that need payment processing and want to sync transaction data with their phone system
+- Suggest relevant integrations based on the user's business type and needs
+
+Use the suggest_integration_connection tool when you think an integration would benefit the user, typically after collecting their basic business information.` as const;
 
 // Localized welcome messages
 const WELCOME_MESSAGES = {
@@ -237,6 +246,24 @@ const tools = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "suggest_integration_connection",
+      description: "Suggest connecting to Square payment integration",
+      parameters: {
+        type: "object",
+        properties: {
+          integration_name: {
+            type: "string",
+            description:
+              "The name of the integration to suggest (currently only 'Square' is supported)",
+          },
+        },
+        required: ["integration_name"],
+      },
+    },
+  },
 ] as const;
 
 const optionChoiceArtifactSchema = z.object({
@@ -253,8 +280,19 @@ const optionChoiceArtifactSchema = z.object({
   "An artifact that allows the user to choose an option from a list.",
 ).strict();
 
+const oauthConnectionArtifactSchema = z.object({
+  type: z.literal("oauth_connection").describe("The type of artifact."),
+  integrationId: z.string().describe("The integration ID to connect to."),
+  integrationName: z.string().describe("The display name of the integration."),
+  description: z.string().describe("Description of what the integration does."),
+  icon: z.string().describe("Icon identifier for the integration."),
+}).describe(
+  "An artifact that allows the user to connect an OAuth integration.",
+).strict();
+
 const artifactSchema = z.discriminatedUnion("type", [
   optionChoiceArtifactSchema,
+  oauthConnectionArtifactSchema,
   // other artifact types...
 ]);
 
@@ -483,6 +521,50 @@ async function executeToolCall(
           success: true,
           ai_use_cases,
           onboarding_completed: true,
+        };
+      }
+
+      case "suggest_integration_connection": {
+        const { integration_name } = parsedArgs as {
+          integration_name: string;
+        };
+
+        // Currently only support Square
+        if (integration_name.toLowerCase() !== "square") {
+          return {
+            success: false,
+            error: "Only Square integration is currently supported",
+          };
+        }
+
+        // Get the Square integration record
+        const { data: integration } = await supabaseClient
+          .from("integrations")
+          .select("*")
+          .eq("ext_integration_id", "squareup-sandbox")
+          .single();
+
+        if (!integration) {
+          return {
+            success: false,
+            error: "Square integration not found in database",
+          };
+        }
+
+        // Create OAuth connection artifact data
+        const artifact = {
+          type: "oauth_connection",
+          integrationId: integration.id,
+          integrationName: integration.name,
+          description: integration.description,
+          icon: integration.icon,
+        };
+
+        return {
+          success: true,
+          integration_name: integration.name,
+          description: integration.description,
+          artifact,
         };
       }
 

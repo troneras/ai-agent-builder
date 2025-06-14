@@ -73,7 +73,15 @@ export interface OptionChoiceArtifact {
   allowFreeText?: boolean;
 }
 
-export type MessageArtifact = OptionChoiceArtifact;
+export interface OAuthConnectionArtifact {
+  type: "oauth_connection";
+  integrationId: string;
+  integrationName: string;
+  description: string;
+  icon: string;
+}
+
+export type MessageArtifact = OptionChoiceArtifact | OAuthConnectionArtifact;
 
 export interface Message {
   id: string;
