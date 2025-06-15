@@ -8,7 +8,9 @@ import {
   MessageSquare,
   Sparkles,
   CheckCircle,
-  ArrowRight
+  ArrowRight,
+  CreditCard,
+  Zap
 } from 'lucide-react';
 
 const FeaturesSection: React.FC = () => {
@@ -40,6 +42,14 @@ const FeaturesSection: React.FC = () => {
 
   const features = [
     {
+      icon: CreditCard,
+      title: "Square Integration",
+      description: "Connect your Square account for instant setup. Import business info, accept payments, and sync everything automatically.",
+      gradient: "from-blue-500 to-cyan-500",
+      benefits: ["Instant business setup", "Accept phone payments", "Sync appointments"],
+      featured: true
+    },
+    {
       icon: Phone,
       title: "Answer Every Call",
       description: "Your assistant picks up every call, even when you're with customers or after hours.",
@@ -50,36 +60,29 @@ const FeaturesSection: React.FC = () => {
       icon: Calendar,
       title: "Book Appointments",
       description: "Customers can schedule appointments instantly without waiting for callbacks.",
-      gradient: "from-blue-500 to-cyan-500",
+      gradient: "from-purple-500 to-pink-500",
       benefits: ["Real-time scheduling", "Sends confirmations", "Reduces no-shows"]
     },
     {
       icon: MessageSquare,
       title: "Answer Questions",
       description: "Provides information about your services, pricing, and availability automatically.",
-      gradient: "from-purple-500 to-pink-500",
+      gradient: "from-orange-500 to-red-500",
       benefits: ["Service details", "Pricing info", "Business hours"]
     },
     {
       icon: Clock,
       title: "Save Your Time",
       description: "Stop dropping what you're doing to answer the phone. Focus on your work.",
-      gradient: "from-orange-500 to-red-500",
+      gradient: "from-indigo-500 to-purple-500",
       benefits: ["More productive days", "Less interruptions", "Better work quality"]
     },
     {
       icon: BarChart3,
       title: "Track Your Calls",
       description: "See how many calls you're getting, what customers want, and when you're busiest.",
-      gradient: "from-indigo-500 to-purple-500",
-      benefits: ["Call summaries", "Customer insights", "Busy time reports"]
-    },
-    {
-      icon: Shield,
-      title: "Always Reliable",
-      description: "Your phone assistant never gets sick, takes breaks, or forgets important details.",
       gradient: "from-teal-500 to-blue-500",
-      benefits: ["100% uptime", "Consistent service", "Perfect memory"]
+      benefits: ["Call summaries", "Customer insights", "Busy time reports"]
     }
   ];
 
@@ -105,6 +108,43 @@ const FeaturesSection: React.FC = () => {
           </p>
         </div>
 
+        {/* Square Integration Callout */}
+        <div className="bg-gradient-to-r from-blue-500 to-cyan-500 rounded-3xl p-8 mb-16 text-white">
+          <div className="max-w-4xl mx-auto text-center">
+            <div className="inline-flex items-center gap-3 bg-white/20 backdrop-blur-md px-6 py-3 rounded-full mb-6">
+              <CreditCard className="w-6 h-6" />
+              <span className="font-semibold">Square Integration Included</span>
+            </div>
+            <h3 className="text-3xl font-bold mb-4">Setup in Under 2 Minutes</h3>
+            <p className="text-xl text-blue-100 mb-6 max-w-2xl mx-auto">
+              Connect your Square account and we'll automatically import your business information, 
+              enable phone payments, and sync your appointment system.
+            </p>
+            <div className="grid md:grid-cols-3 gap-6">
+              <div className="bg-white/10 backdrop-blur-md rounded-xl p-4">
+                <Zap className="w-8 h-8 mx-auto mb-2" />
+                <h4 className="font-semibold mb-1">Instant Import</h4>
+                <p className="text-sm text-blue-100">Business info, hours, services</p>
+              </div>
+              <div className="bg-white/10 backdrop-blur-md rounded-xl p-4">
+                <CreditCard className="w-8 h-8 mx-auto mb-2" />
+                <h4 className="font-semibold mb-1">Phone Payments</h4>
+                <p className="text-sm text-blue-100">Accept payments over the phone</p>
+              </div>
+              <div className="bg-white/10 backdrop-blur-md rounded-xl p-4">
+                <Calendar className="w-8 h-8 mx-auto mb-2" />
+                <h4 className="font-semibold mb-1">Smart Booking</h4>
+                <p className="text-sm text-blue-100">Sync with your calendar system</p>
+              </div>
+            </div>
+            <div className="mt-6">
+              <p className="text-blue-100 text-sm">
+                <strong>Don't have Square?</strong> No problem! We'll help you create a free account in just 2 minutes.
+              </p>
+            </div>
+          </div>
+        </div>
+
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8" role="list" aria-label="Phone assistant features">
           {features.map((feature, index) => {
             const Icon = feature.icon;
@@ -116,7 +156,7 @@ const FeaturesSection: React.FC = () => {
                 data-index={index}
                 className={`feature-card group relative bg-white rounded-2xl p-8 shadow-lg hover:shadow-xl transition-all duration-500 border border-gray-100 hover:border-gray-200 focus-within:ring-4 focus-within:ring-purple-500/20 ${
                   isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
-                }`}
+                } ${feature.featured ? 'ring-2 ring-blue-200' : ''}`}
                 style={{ 
                   transitionDelay: `${index * 150}ms`,
                   transform: isVisible ? 'translateY(0)' : 'translateY(40px)'
@@ -126,6 +166,14 @@ const FeaturesSection: React.FC = () => {
                 aria-labelledby={`feature-title-${index}`}
                 aria-describedby={`feature-desc-${index}`}
               >
+                {feature.featured && (
+                  <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
+                    <div className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white px-4 py-1 rounded-full text-sm font-semibold">
+                      Featured Integration
+                    </div>
+                  </div>
+                )}
+                
                 <div className="relative z-10">
                   <div className={`inline-flex p-3 rounded-xl bg-gradient-to-r ${feature.gradient} mb-6 group-hover:scale-110 transition-transform duration-300`} aria-hidden="true">
                     <Icon className="w-6 h-6 text-white" />

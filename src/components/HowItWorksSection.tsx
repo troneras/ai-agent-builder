@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { MessageSquare, Settings, Phone, ArrowRight, CheckCircle, Play } from 'lucide-react';
+import { CreditCard, Settings, Phone, ArrowRight, CheckCircle, Play, Zap } from 'lucide-react';
 
 interface HowItWorksSectionProps {
   onStartBuilding: () => void;
@@ -57,14 +57,14 @@ const HowItWorksSection: React.FC<HowItWorksSectionProps> = ({ onStartBuilding }
 
   const steps = [
     {
-      icon: MessageSquare,
-      title: "Tell Us About Your Business",
-      description: "We'll ask a few simple questions about your business, services, and how you want your assistant to sound.",
+      icon: CreditCard,
+      title: "Connect Your Square Account",
+      description: "Link your existing Square account or we'll help you create a free one. Your business info gets imported automatically.",
       details: [
-        "What services you offer",
-        "Your business hours", 
-        "How you like to talk to customers",
-        "Your pricing and policies"
+        "Import business name & hours",
+        "Sync your services & pricing", 
+        "Enable phone payment processing",
+        "Connect appointment system"
       ],
       color: "from-blue-500 to-cyan-500",
       bgColor: "bg-blue-50"
@@ -89,7 +89,7 @@ const HowItWorksSection: React.FC<HowItWorksSectionProps> = ({ onStartBuilding }
       details: [
         "Answers calls right away",
         "Books appointments automatically",
-        "Sends you call summaries",
+        "Processes payments securely",
         "Gets smarter over time"
       ],
       color: "from-green-500 to-emerald-500",
@@ -114,14 +114,14 @@ const HowItWorksSection: React.FC<HowItWorksSectionProps> = ({ onStartBuilding }
           </h2>
           
           <p className="text-xl text-gray-300 max-w-3xl mx-auto mb-8">
-            Get your phone assistant up and running in just a few minutes. 
+            Get your phone assistant up and running in just a few minutes with Square integration. 
             No complicated setup or technical knowledge needed.
           </p>
           
           <div className="flex justify-center">
             <div className="flex items-center gap-4 bg-white/10 backdrop-blur-md rounded-full px-6 py-3 text-white/80" role="status" aria-label="Setup time estimate">
-              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" aria-hidden="true"></div>
-              <span className="text-sm">Most customers are ready in under 10 minutes</span>
+              <Zap className="w-5 h-5 text-yellow-400" aria-hidden="true" />
+              <span className="text-sm">Square customers are ready in under 2 minutes</span>
             </div>
           </div>
         </div>
@@ -198,9 +198,10 @@ const HowItWorksSection: React.FC<HowItWorksSectionProps> = ({ onStartBuilding }
               <button
                 onClick={onStartBuilding}
                 className="bg-gradient-to-r from-purple-500 to-blue-500 text-white px-8 py-4 rounded-xl font-semibold text-lg hover:from-purple-600 hover:to-blue-600 transition-all duration-300 flex items-center justify-center gap-2 shadow-xl hover:shadow-2xl hover:scale-105 focus:outline-none focus:ring-4 focus:ring-purple-500/50"
-                aria-label="Activate your assistant now"
+                aria-label="Connect Square & Start Now"
               >
-                Activate Your Assistant Now
+                <CreditCard className="w-5 h-5" aria-hidden="true" />
+                Connect Square & Start Now
                 <ArrowRight className="w-5 h-5" aria-hidden="true" />
               </button>
               
@@ -217,7 +218,7 @@ const HowItWorksSection: React.FC<HowItWorksSectionProps> = ({ onStartBuilding }
             <div className="flex items-center justify-center gap-6 mt-6 text-sm text-gray-400" role="list" aria-label="Additional benefits">
               <span role="listitem">✨ No setup fees</span>
               <span role="listitem">🚀 Ready in minutes</span>
-              <span role="listitem">💬 Always available</span>
+              <span role="listitem">💳 Square integration included</span>
             </div>
           </div>
         </div>

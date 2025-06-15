@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MessageCircle, Sparkles, ArrowRight, Play } from 'lucide-react';
+import { MessageCircle, Sparkles, ArrowRight, Play, CreditCard, CheckCircle } from 'lucide-react';
 import Logo from './Logo';
 
 interface HeroSectionProps {
@@ -70,9 +70,12 @@ const HeroSection: React.FC<HeroSectionProps> = ({ onStartBuilding }) => {
       <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-12 items-center">
         {/* Content */}
         <div className={`text-center lg:text-left transition-all duration-1000 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
-          <div className="inline-flex items-center gap-2 bg-purple-100 text-purple-700 px-4 py-2 rounded-full text-sm font-medium mb-6" role="status" aria-label="Setup time indicator">
-            <Sparkles className="w-4 h-4" aria-hidden="true" />
-            Setup in Minutes
+          {/* Square Integration Badge */}
+          <div className="inline-flex items-center gap-3 bg-white/15 backdrop-blur-md text-white px-6 py-3 rounded-full text-sm font-medium mb-6 border border-white/20" role="status" aria-label="Square integration">
+            <CreditCard className="w-5 h-5" aria-hidden="true" />
+            <span className="drop-shadow-sm" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>
+              Works with Square account for instant setup
+            </span>
           </div>
           
           <h1 className="text-5xl lg:text-7xl font-bold text-white mb-6 leading-tight">
@@ -96,6 +99,47 @@ const HeroSection: React.FC<HeroSectionProps> = ({ onStartBuilding }) => {
             even when you're busy or closed.
           </p>
 
+          {/* Square Benefits */}
+          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 mb-8 border border-white/20">
+            <div className="flex items-center gap-3 mb-4">
+              <CreditCard className="w-6 h-6 text-white" />
+              <h3 className="text-white font-semibold text-lg drop-shadow-sm" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>
+                Powered by Square Integration
+              </h3>
+            </div>
+            <div className="grid md:grid-cols-2 gap-4 text-white/90">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
+                <span className="text-sm drop-shadow-sm" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>
+                  Import business info instantly
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
+                <span className="text-sm drop-shadow-sm" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>
+                  Accept payments over phone
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
+                <span className="text-sm drop-shadow-sm" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>
+                  Sync appointments & bookings
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
+                <span className="text-sm drop-shadow-sm" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>
+                  Setup in under 2 minutes
+                </span>
+              </div>
+            </div>
+            <div className="mt-4 pt-4 border-t border-white/20">
+              <p className="text-white/80 text-sm drop-shadow-sm" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>
+                <strong>Don't have Square?</strong> We'll help you create one for free - it takes just 2 minutes!
+              </p>
+            </div>
+          </div>
+
           {/* Use cases */}
           <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 mb-8 border border-white/20">
             <p className="text-white/90 text-lg mb-4 drop-shadow-sm" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>
@@ -107,9 +151,10 @@ const HeroSection: React.FC<HeroSectionProps> = ({ onStartBuilding }) => {
             <button
               onClick={onStartBuilding}
               className="bg-white text-purple-600 px-8 py-4 rounded-xl font-semibold text-lg hover:bg-gray-50 transition-all duration-300 flex items-center justify-center gap-2 shadow-xl hover:shadow-2xl hover:scale-105 focus:outline-none focus:ring-4 focus:ring-white/50"
-              aria-label="Let Cutcall answer for you"
+              aria-label="Connect with Square & Start"
             >
-              Let Cutcall Answer For You
+              <CreditCard className="w-5 h-5" aria-hidden="true" />
+              Connect with Square & Start
               <ArrowRight className="w-5 h-5" aria-hidden="true" />
             </button>
             <button 

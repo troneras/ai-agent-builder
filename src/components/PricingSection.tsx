@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Zap, Star, ArrowRight, Phone, MessageSquare, Calendar, Play } from 'lucide-react';
+import { Check, Zap, Star, ArrowRight, Phone, MessageSquare, Calendar, Play, CreditCard } from 'lucide-react';
 
 interface PricingSectionProps {
   onStartBuilding: () => void;
@@ -47,6 +47,7 @@ const PricingSection: React.FC<PricingSectionProps> = ({ onStartBuilding }) => {
       popular: false,
       features: [
         "Up to 100 calls per month",
+        "Square integration included",
         "Basic appointment scheduling",
         "Email call summaries",
         "Business hours availability",
@@ -56,7 +57,7 @@ const PricingSection: React.FC<PricingSectionProps> = ({ onStartBuilding }) => {
       gradient: "from-blue-500 to-cyan-500",
       bgGradient: "from-blue-50 to-cyan-50",
       icon: Phone,
-      cta: "Start Your Assistant"
+      cta: "Connect Square & Start"
     },
     {
       name: "Professional",
@@ -66,7 +67,9 @@ const PricingSection: React.FC<PricingSectionProps> = ({ onStartBuilding }) => {
       popular: true,
       features: [
         "Up to 500 calls per month",
+        "Square integration included",
         "Advanced appointment scheduling",
+        "Phone payment processing",
         "SMS & email notifications",
         "24/7 availability",
         "Premium voice quality",
@@ -77,7 +80,7 @@ const PricingSection: React.FC<PricingSectionProps> = ({ onStartBuilding }) => {
       gradient: "from-purple-500 to-pink-500",
       bgGradient: "from-purple-50 to-pink-50",
       icon: MessageSquare,
-      cta: "Activate Your Assistant"
+      cta: "Connect Square & Activate"
     },
     {
       name: "Enterprise",
@@ -87,7 +90,9 @@ const PricingSection: React.FC<PricingSectionProps> = ({ onStartBuilding }) => {
       popular: false,
       features: [
         "Unlimited calls",
+        "Square integration included",
         "Multi-location support",
+        "Advanced payment processing",
         "Advanced integrations",
         "Custom voice training",
         "Dedicated account manager",
@@ -99,15 +104,15 @@ const PricingSection: React.FC<PricingSectionProps> = ({ onStartBuilding }) => {
       gradient: "from-green-500 to-emerald-500",
       bgGradient: "from-green-50 to-emerald-50",
       icon: Star,
-      cta: "Get Enterprise Setup"
+      cta: "Connect Square & Get Enterprise"
     }
   ];
 
   const features = [
     {
-      icon: Phone,
-      title: "Never Miss a Call",
-      description: "Your assistant answers every call, even when you're busy"
+      icon: CreditCard,
+      title: "Square Integration",
+      description: "Connect your Square account for instant setup and payment processing"
     },
     {
       icon: Calendar,
@@ -140,7 +145,7 @@ const PricingSection: React.FC<PricingSectionProps> = ({ onStartBuilding }) => {
           
           <p className="text-xl text-gray-600 max-w-3xl mx-auto mb-8">
             Start with any plan and upgrade as your business grows. 
-            No setup fees, no long-term contracts, cancel anytime.
+            Square integration included in all plans. No setup fees, no long-term contracts.
           </p>
 
           <div className="flex justify-center">
@@ -151,6 +156,24 @@ const PricingSection: React.FC<PricingSectionProps> = ({ onStartBuilding }) => {
                   Save 20% with Annual
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Square Integration Highlight */}
+        <div className="bg-gradient-to-r from-blue-500 to-cyan-500 rounded-3xl p-8 mb-16 text-white">
+          <div className="max-w-4xl mx-auto text-center">
+            <div className="inline-flex items-center gap-3 bg-white/20 backdrop-blur-md px-6 py-3 rounded-full mb-4">
+              <CreditCard className="w-6 h-6" />
+              <span className="font-semibold">Square Integration Included in All Plans</span>
+            </div>
+            <h3 className="text-2xl font-bold mb-4">No Extra Fees for Square Integration</h3>
+            <p className="text-blue-100 mb-6">
+              Every plan includes full Square integration at no additional cost. Import your business info, 
+              accept payments, and sync appointments automatically.
+            </p>
+            <div className="text-sm text-blue-100">
+              <strong>Don't have Square?</strong> We'll help you create a free account in just 2 minutes!
             </div>
           </div>
         </div>
@@ -217,7 +240,7 @@ const PricingSection: React.FC<PricingSectionProps> = ({ onStartBuilding }) => {
                         <span className="text-gray-500">/{plan.period}</span>
                       </div>
                       <div className="text-sm text-gray-500 mt-1">
-                        Billed monthly, cancel anytime
+                        Square integration included
                       </div>
                     </div>
                     
@@ -283,7 +306,7 @@ const PricingSection: React.FC<PricingSectionProps> = ({ onStartBuilding }) => {
         <div className="text-center">
           <div className="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 max-w-2xl mx-auto" role="region" aria-labelledby="guarantee-heading">
             <h3 id="guarantee-heading" className="text-2xl font-bold text-gray-900 mb-4">
-              Say Goodbye to Missed Calls. Hear What It Would Be Like with Cutcall.
+              Say Goodbye to Missed Calls. Connect Square & Start Today.
             </h3>
             <p className="text-gray-600 mb-6">
               Try any plan risk-free for 30 days. If you're not completely satisfied, 
@@ -294,9 +317,10 @@ const PricingSection: React.FC<PricingSectionProps> = ({ onStartBuilding }) => {
               <button
                 onClick={onStartBuilding}
                 className="bg-gradient-to-r from-purple-500 to-blue-500 text-white px-8 py-4 rounded-xl font-semibold text-lg hover:from-purple-600 hover:to-blue-600 transition-all duration-300 flex items-center justify-center gap-2 shadow-xl hover:shadow-2xl hover:scale-105 focus:outline-none focus:ring-4 focus:ring-purple-500/50"
-                aria-label="Let Cutcall answer for you"
+                aria-label="Connect Square & Start"
               >
-                Let Cutcall Answer For You
+                <CreditCard className="w-5 h-5" aria-hidden="true" />
+                Connect Square & Start
                 <ArrowRight className="w-5 h-5" aria-hidden="true" />
               </button>
               
@@ -312,8 +336,8 @@ const PricingSection: React.FC<PricingSectionProps> = ({ onStartBuilding }) => {
             
             <div className="flex items-center justify-center gap-6 mt-6 text-sm text-gray-500" role="list" aria-label="Trial benefits">
               <span role="listitem">✨ No credit card required</span>
-              <span role="listitem">🚀 Setup in 5 minutes</span>
-              <span role="listitem">💬 Cancel anytime</span>
+              <span role="listitem">🚀 Setup in 2 minutes</span>
+              <span role="listitem">💳 Square integration included</span>
             </div>
           </div>
         </div>
