@@ -27,45 +27,7 @@ const CORS_HEADERS = {
 } as const;
 
 const SYSTEM_PROMPT =
-  `You are an AI assistant helping users set up their business phone system. 
-You need to collect information about their business and preferences.
-Use the available tools to store information as you collect it.
-Be friendly and professional, using emojis occasionally to make the conversation engaging.
-Format your responses using markdown for better readability.
-
-When you want the user to select from a set of options, include an artifacts array with an option_choice object. This provides a better user experience with clickable buttons. For example:
-- When asking about business type, provide common options like "Restaurant", "Retail", "Professional Services", etc.
-- When asking about AI use cases, provide the available options as buttons
-- When asking about preferences, provide yes/no options or multiple choice options
-
-Always include both the question in your text response AND the options in the artifacts array.
-
-**IMPORTANT: Only return ONE artifact at a time.** If you need to collect multiple pieces of information, ask for them sequentially, one at a time. Do not include multiple artifacts in a single response.
-
-**Available Integrations:**
-You can suggest connecting to external services that would benefit the user's business:
-- **Square** (squareup-sandbox): For businesses that need payment processing and want to sync transaction data with their phone system
-- Suggest relevant integrations based on the user's business type and needs
-
-Use the suggest_integration_connection tool when you think an integration would benefit the user, typically after collecting their basic business information.` as const;
-
-// Localized welcome messages
-const WELCOME_MESSAGES = {
-  en: `👋 **Welcome to your AI-powered phone assistant setup!**
-
-I'm here to help you get your business phone system configured perfectly. I'll gather some information about you and your business to customize everything just right.
-
-Let's start with the basics - **what's your name?**`,
-  // Future localization support - add more languages here
-  // es: `👋 **¡Bienvenido a la configuración de tu asistente telefónico con IA!** ...`,
-  // fr: `👋 **Bienvenue dans la configuration de votre assistant téléphonique IA!** ...`,
-} as const;
-
-// Function to get localized welcome message
-function getWelcomeMessage(locale: string = "en"): string {
-  return WELCOME_MESSAGES[locale as keyof typeof WELCOME_MESSAGES] ||
-    WELCOME_MESSAGES.en;
-}
+  `You are an AI assistant helping users set up their business phone system.\n\n**MANDATORY FIRST STEP:**\nAlways start onboarding by asking the user to connect their Square account using an oauth_connection artifact.\n\n**Why connect Square?**\n- Instantly import business name, phone, and opening hours\n- Set up phone bookings for customers\n- Keep info in sync automatically\n\n**If the user refuses to connect Square:**\n- Upsell the benefits again\n- Reassure them: 'You're always in control — you can review and update any details before continuing.'\n- Show this privacy statement: '🔒 Your privacy matters. We only use your Square account to import your business information and manage bookings. You can disconnect your account at any time.'\n- Only allow manual entry if the user insists on not connecting\n\n**Artifacts:**\n- When you want the user to select from a set of options, include an artifacts array with an option_choice object.\n- For Square connection, always use an oauth_connection artifact with a prompt explaining the benefits and privacy.\n- Only return ONE artifact at a time.\n\nBe friendly and professional, use emojis occasionally, and format responses using markdown.\n` as const;
 
 const AI_USE_CASES = [
   "appointment_scheduling",
@@ -81,7 +43,6 @@ interface RequestBody {
   action: "get_conversation" | "send_message";
   userId?: string;
   message?: string;
-  locale?: string; // Add locale support for future localization
 }
 
 interface ToolResult {
@@ -286,6 +247,9 @@ const oauthConnectionArtifactSchema = z.object({
   integrationName: z.string().describe("The display name of the integration."),
   description: z.string().describe("Description of what the integration does."),
   icon: z.string().describe("Icon identifier for the integration."),
+  prompt: z.string().describe(
+    "Prompt explaining why the user should connect this integration.",
+  ),
 }).describe(
   "An artifact that allows the user to connect an OAuth integration.",
 ).strict();
@@ -558,6 +522,7 @@ async function executeToolCall(
           integrationName: integration.name,
           description: integration.description,
           icon: integration.icon,
+          prompt: integration.prompt,
         };
 
         return {
@@ -609,7 +574,7 @@ Deno.serve(async (req: Request) => {
       return createErrorResponse("Invalid JSON in request body");
     }
 
-    const { action, userId, message, locale } = body;
+    const { action, userId, message } = body;
 
     if (!userId) {
       return createErrorResponse("User ID is required");
@@ -663,13 +628,36 @@ Deno.serve(async (req: Request) => {
             });
         }
 
-        // Add welcome message
+        // Fetch Square integration for artifact
+        const { data: integration } = await supabaseClient
+          .from("integrations")
+          .select("*")
+          .eq("ext_integration_id", "squareup-sandbox")
+          .single();
+
+        // Compose onboarding welcome message and artifact
+        const welcomeText =
+          `🚀 Get started by connecting your Square account\n\nTo set up your AI phone assistant, just connect your Square account.\nWe'll instantly import your business info (name, phone, hours, services) so you're ready to go in less than a minute!\n\n**We'll use your Square account to:**\n\n- Import your business name, phone, and opening hours\n- Set up phone bookings for your customers\n- Keep your info in sync automatically\n\nYou're always in control — you can review and update any details before continuing.\n\n🔒 **Your privacy matters**\n\nWe only use your Square account to import your business information and manage bookings.\nYou can disconnect your account at any time.`;
+
+        const artifact = integration
+          ? [{
+            type: "oauth_connection",
+            integrationId: integration.id,
+            integrationName: integration.name,
+            description: integration.description,
+            icon: integration.icon,
+            prompt:
+              "Connect your Square account to instantly import your business info, enable phone bookings, and keep your details in sync. You can review and update everything before continuing. Your privacy is protected — disconnect anytime.",
+          }]
+          : [];
+
         await supabaseClient
           .from("messages")
           .insert({
             conversation_id: finalConversation.id,
             role: "assistant",
-            content: getWelcomeMessage(locale),
+            content: welcomeText,
+            artifacts: artifact,
             message_order: 1,
           });
       } else if (convError) {
