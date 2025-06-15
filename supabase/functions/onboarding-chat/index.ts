@@ -27,7 +27,7 @@ const CORS_HEADERS = {
 } as const;
 
 const SYSTEM_PROMPT =
-  `You are an AI assistant helping users set up their business phone system.\n\n**MANDATORY FIRST STEP:**\nAlways start onboarding by asking the user to connect their Square account using an oauth_connection artifact.\n\n**Why connect Square?**\n- Instantly import business name, phone, and opening hours\n- Set up phone bookings for customers\n- Keep info in sync automatically\n\n**If the user refuses to connect Square:**\n- Upsell the benefits again\n- Reassure them: 'You're always in control — you can review and update any details before continuing.'\n- Show this privacy statement: '🔒 Your privacy matters. We only use your Square account to import your business information and manage bookings. You can disconnect your account at any time.'\n- Only allow manual entry if the user insists on not connecting\n\n**Artifacts:**\n- When you want the user to select from a set of options, include an artifacts array with an option_choice object.\n- For Square connection, always use an oauth_connection artifact with a prompt explaining the benefits and privacy.\n- Only return ONE artifact at a time.\n\nBe friendly and professional, use emojis occasionally, and format responses using markdown.\n` as const;
+  `You are an AI assistant helping users complete their business phone system setup.\n\n**CONTEXT:**\nThe user has already been through the Square connection step. Now you need to collect their business information to complete the setup.\n\n**YOUR ROLE:**\n- Help users provide their business details\n- Ask follow-up questions to get complete information\n- Be friendly, professional, and efficient\n- Use tools to store information as you collect it\n\n**INFORMATION TO COLLECT:**\n1. User's full name\n2. Business name and type\n3. Business location (city)\n4. Phone number\n5. Business hours\n6. Services offered\n7. AI features they want to enable\n\n**GUIDELINES:**\n- Ask for information in a natural, conversational way\n- Don't ask for everything at once - gather info progressively\n- Use option_choice artifacts when presenting multiple choices\n- Store information using tools as soon as you get it\n- Be encouraging and explain how each piece helps their phone assistant\n\nBe friendly and professional, use emojis occasionally, and format responses using markdown.\n` as const;
 
 const AI_USE_CASES = [
   "appointment_scheduling",
@@ -207,24 +207,6 @@ const tools = [
       },
     },
   },
-  {
-    type: "function",
-    function: {
-      name: "suggest_integration_connection",
-      description: "Suggest connecting to Square payment integration",
-      parameters: {
-        type: "object",
-        properties: {
-          integration_name: {
-            type: "string",
-            description:
-              "The name of the integration to suggest (currently only 'Square' is supported)",
-          },
-        },
-        required: ["integration_name"],
-      },
-    },
-  },
 ] as const;
 
 const optionChoiceArtifactSchema = z.object({
@@ -241,23 +223,8 @@ const optionChoiceArtifactSchema = z.object({
   "An artifact that allows the user to choose an option from a list.",
 ).strict();
 
-const oauthConnectionArtifactSchema = z.object({
-  type: z.literal("oauth_connection").describe("The type of artifact."),
-  integrationId: z.string().describe("The integration ID to connect to."),
-  integrationName: z.string().describe("The display name of the integration."),
-  description: z.string().describe("Description of what the integration does."),
-  icon: z.string().describe("Icon identifier for the integration."),
-  prompt: z.string().describe(
-    "Prompt explaining why the user should connect this integration.",
-  ),
-}).describe(
-  "An artifact that allows the user to connect an OAuth integration.",
-).strict();
-
 const artifactSchema = z.discriminatedUnion("type", [
   optionChoiceArtifactSchema,
-  oauthConnectionArtifactSchema,
-  // other artifact types...
 ]);
 
 export const responseFormatSchema = z.object({
@@ -279,7 +246,6 @@ const responseJsonSchema = {
 function handleChatResponse(rawResponse: unknown): ChatResponse | null {
   const parsed = responseFormatSchema.safeParse(rawResponse);
   if (!parsed.success) {
-    // Handle invalid response (e.g., fallback to plain text, show error, log, etc.)
     console.error("Invalid response format", parsed.error);
     return null;
   }
@@ -488,51 +454,6 @@ async function executeToolCall(
         };
       }
 
-      case "suggest_integration_connection": {
-        const { integration_name } = parsedArgs as {
-          integration_name: string;
-        };
-
-        // Currently only support Square
-        if (integration_name.toLowerCase() !== "square") {
-          return {
-            success: false,
-            error: "Only Square integration is currently supported",
-          };
-        }
-
-        // Get the Square integration record
-        const { data: integration } = await supabaseClient
-          .from("integrations")
-          .select("*")
-          .eq("ext_integration_id", "squareup-sandbox")
-          .single();
-
-        if (!integration) {
-          return {
-            success: false,
-            error: "Square integration not found in database",
-          };
-        }
-
-        // Create OAuth connection artifact data
-        const artifact = {
-          type: "oauth_connection",
-          integrationId: integration.id,
-          integrationName: integration.name,
-          description: integration.description,
-          icon: integration.icon,
-          prompt: integration.prompt,
-        };
-
-        return {
-          success: true,
-          integration_name: integration.name,
-          description: integration.description,
-          artifact,
-        };
-      }
-
       default:
         return { success: false, error: `Unknown tool: ${name}` };
     }
@@ -628,28 +549,9 @@ Deno.serve(async (req: Request) => {
             });
         }
 
-        // Fetch Square integration for artifact
-        const { data: integration } = await supabaseClient
-          .from("integrations")
-          .select("*")
-          .eq("ext_integration_id", "squareup-sandbox")
-          .single();
-
-        // Compose onboarding welcome message and artifact
+        // Create welcome message for business setup
         const welcomeText =
-          `🚀 Get started by connecting your Square account\n\nTo set up your AI phone assistant, just connect your Square account.\nWe'll instantly import your business info (name, phone, hours, services) so you're ready to go in less than a minute!\n\n**We'll use your Square account to:**\n\n- Import your business name, phone, and opening hours\n- Set up phone bookings for your customers\n- Keep your info in sync automatically\n\nYou're always in control — you can review and update any details before continuing.\n\n🔒 **Your privacy matters**\n\nWe only use your Square account to import your business information and manage bookings.\nYou can disconnect your account at any time.`;
-
-        const artifact = integration
-          ? [{
-            type: "oauth_connection",
-            integrationId: integration.id,
-            integrationName: integration.name,
-            description: integration.description,
-            icon: integration.icon,
-            prompt:
-              "Connect your Square account to instantly import your business info, enable phone bookings, and keep your details in sync. You can review and update everything before continuing. Your privacy is protected — disconnect anytime.",
-          }]
-          : [];
+          `👋 **Welcome! Let's complete your phone assistant setup**\n\nGreat! Now I need to collect some information about your business to personalize your phone assistant.\n\nThis will only take a few minutes, and I'll guide you through each step.\n\n**What I'll ask you about:**\n\n• Your name and business details\n• Contact information\n• Business hours and services\n• Which AI features you'd like to enable\n\nLet's start with the basics. **What's your full name?**`;
 
         await supabaseClient
           .from("messages")
@@ -657,7 +559,6 @@ Deno.serve(async (req: Request) => {
             conversation_id: finalConversation.id,
             role: "assistant",
             content: welcomeText,
-            artifacts: artifact,
             message_order: 1,
           });
       } else if (convError) {
@@ -769,7 +670,6 @@ Deno.serve(async (req: Request) => {
         const parsedResponse = handleChatResponse(
           safeJsonParse(response.content),
         );
-        console.log("Parsed response:", parsedResponse);
         responseContent = parsedResponse?.text ?? response.content;
         responseArtifacts = parsedResponse?.artifacts ?? null;
       }
@@ -779,15 +679,6 @@ Deno.serve(async (req: Request) => {
       // Check if the model wanted to call functions
       if (toolCalls.length > 0) {
         // Save the assistant message with tool_calls
-        // First, try to insert without tool_calls and tool_args to see if basic insertion works
-        console.log("Attempting to save assistant message with tool_calls:", {
-          conversation_id: typedConversation.id,
-          role: "assistant",
-          content: responseContent,
-          message_order: nextOrder,
-          tool_calls: toolCalls,
-        });
-
         const { error: assistantMsgError } = await supabaseClient
           .from("messages")
           .insert({
@@ -802,19 +693,7 @@ Deno.serve(async (req: Request) => {
           });
 
         if (assistantMsgError) {
-          console.error(
-            "Error saving assistant message with tool_calls:",
-            assistantMsgError,
-          );
-          console.error(
-            "Full error details:",
-            JSON.stringify(assistantMsgError, null, 2),
-          );
-
           // Try fallback without tool_calls field if it doesn't exist in schema
-          console.log(
-            "Attempting fallback insertion without tool_calls field...",
-          );
           const { error: fallbackError } = await supabaseClient
             .from("messages")
             .insert({
@@ -828,12 +707,7 @@ Deno.serve(async (req: Request) => {
             });
 
           if (fallbackError) {
-            console.error("Fallback insertion also failed:", fallbackError);
-            throw assistantMsgError; // Throw original error
-          } else {
-            console.log(
-              "Fallback insertion succeeded - tool_calls field likely doesn't exist in schema",
-            );
+            throw assistantMsgError;
           }
         }
 

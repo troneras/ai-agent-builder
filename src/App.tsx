@@ -9,13 +9,14 @@ import Footer from './components/Footer';
 import AuthForm from './components/AuthForm';
 import OnboardingChat from './components/OnboardingChat';
 import Dashboard from './components/Dashboard';
+import SquareConnectionPage from './components/SquareConnectionPage';
 import ParticleBackground from './components/ParticleBackground';
 import { useAuth } from './hooks/useAuth';
 import { useUserProfile } from './hooks/useUserProfile';
 import { useOnboarding } from './hooks/useOnboarding';
 import { authHelpers } from './lib/supabase';
 
-type AppView = 'landing' | 'dashboard' | 'onboarding';
+type AppView = 'landing' | 'dashboard' | 'square-connection' | 'onboarding';
 
 function App() {
   const [showAuth, setShowAuth] = useState(false);
@@ -35,8 +36,21 @@ function App() {
         // Onboarding completed - go to dashboard
         setCurrentView('dashboard');
       } else {
-        // Onboarding not completed - go to onboarding
-        setCurrentView('onboarding');
+        // Check if user has started onboarding (has any data filled)
+        const hasStartedOnboarding = onboarding && (
+          onboarding.user_name || 
+          onboarding.business_name || 
+          onboarding.business_type ||
+          onboarding.current_step > 1
+        );
+
+        if (hasStartedOnboarding) {
+          // User has started onboarding - go to chat
+          setCurrentView('onboarding');
+        } else {
+          // New user - start with Square connection
+          setCurrentView('square-connection');
+        }
       }
     } else {
       // User not logged in - go to landing
@@ -50,7 +64,19 @@ function App() {
       if (onboarding?.completed) {
         setCurrentView('dashboard');
       } else {
-        setCurrentView('onboarding');
+        // Check if user should go to Square connection or onboarding chat
+        const hasStartedOnboarding = onboarding && (
+          onboarding.user_name || 
+          onboarding.business_name || 
+          onboarding.business_type ||
+          onboarding.current_step > 1
+        );
+
+        if (hasStartedOnboarding) {
+          setCurrentView('onboarding');
+        } else {
+          setCurrentView('square-connection');
+        }
       }
     } else {
       // User not logged in, show registration
@@ -71,6 +97,16 @@ function App() {
 
   const handleAuthClose = () => {
     setShowAuth(false);
+  };
+
+  const handleSquareConnected = () => {
+    // When Square is connected, move to onboarding chat
+    setCurrentView('onboarding');
+  };
+
+  const handleSquareSkipped = () => {
+    // When Square is skipped, move to onboarding chat
+    setCurrentView('onboarding');
   };
 
   const handleOnboardingComplete = () => {
@@ -99,6 +135,16 @@ function App() {
   // Render based on current view
   if (currentView === 'dashboard') {
     return <Dashboard onBackToLanding={handleBackToLanding} onSignOut={handleSignOut} />;
+  }
+
+  if (currentView === 'square-connection') {
+    return (
+      <SquareConnectionPage 
+        onConnected={handleSquareConnected}
+        onSkipped={handleSquareSkipped}
+        onSignOut={handleSignOut}
+      />
+    );
   }
 
   if (currentView === 'onboarding') {
