@@ -13,10 +13,10 @@
   - Validates user ownership of conversations
 */
 
-import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { OpenAI } from "npm:openai@4.28.0";
-import { z } from "npm:zod@3.22.0";
-import { zodToJsonSchema } from "npm:zod-to-json-schema@3.22.0";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { OpenAI } from "openai";
+import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 
 // Constants
 const CORS_HEADERS = {
@@ -209,35 +209,42 @@ const tools = [
   },
 ] as const;
 
-const optionChoiceArtifactSchema = z.object({
-  type: z.literal("option_choice").describe("The type of artifact."),
-  prompt: z.string().describe("The prompt to show the user."),
-  options: z.array(z.object({
-    label: z.string().describe("The option label."),
-    value: z.string().describe("The value to return if chosen."),
-  })).describe("The list of options."),
-  allowFreeText: z.boolean().describe(
-    "Whether to allow free-text answers.",
-  ),
-}).describe(
-  "An artifact that allows the user to choose an option from a list.",
-).strict();
+const optionChoiceArtifactSchema = z
+  .object({
+    type: z.literal("option_choice").describe("The type of artifact."),
+    prompt: z.string().describe("The prompt to show the user."),
+    options: z
+      .array(
+        z.object({
+          label: z.string().describe("The option label."),
+          value: z.string().describe("The value to return if chosen."),
+        })
+      )
+      .describe("The list of options."),
+    allowFreeText: z.boolean().describe("Whether to allow free-text answers."),
+  })
+  .describe("An artifact that allows the user to choose an option from a list.")
+  .strict();
 
 const artifactSchema = z.discriminatedUnion("type", [
   optionChoiceArtifactSchema,
 ]);
 
-export const responseFormatSchema = z.object({
-  text: z.string().describe("The user-facing message content."),
-  artifacts: z.array(artifactSchema).describe(
-    "Optional UI artifacts for advanced rendering. Structure reserved for future use.",
-  ),
-}).strict();
+export const responseFormatSchema = z
+  .object({
+    text: z.string().describe("The user-facing message content."),
+    artifacts: z
+      .array(artifactSchema)
+      .describe(
+        "Optional UI artifacts for advanced rendering. Structure reserved for future use."
+      ),
+  })
+  .strict();
 
 type ChatResponse = z.infer<typeof responseFormatSchema>;
 
 // Convert Zod schema to JSON schema for OpenAI
-const responseJsonSchema = {
+const _responseJsonSchema = {
   name: "chat_response",
   strict: true,
   schema: zodToJsonSchema(responseFormatSchema),
@@ -254,27 +261,22 @@ function handleChatResponse(rawResponse: unknown): ChatResponse | null {
 
 // Utility functions
 function createErrorResponse(message: string, status = 400): Response {
-  return new Response(
-    JSON.stringify({ error: message }),
-    {
-      status,
-      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-    },
-  );
+  return new Response(JSON.stringify({ error: message }), {
+    status,
+    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+  });
 }
 
 function createSuccessResponse(data: unknown): Response {
-  return new Response(
-    JSON.stringify(data),
-    {
-      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-    },
-  );
+  return new Response(JSON.stringify(data), {
+    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+  });
 }
 
 // Helper to build conversation history for OpenAI
 function buildConversationHistory(messages: DatabaseMessage[]) {
-  const history = [];
+  const history: unknown[] = [];
+
   for (const msg of messages) {
     if (msg.role === "user") {
       history.push({
@@ -294,7 +296,7 @@ function buildConversationHistory(messages: DatabaseMessage[]) {
           content: msg.content,
         });
       }
-    } else if (msg.role === "tool") {
+    } else if (msg.role === "tool" && msg.tool_call_id && msg.tool_name) {
       history.push({
         role: "tool",
         tool_call_id: msg.tool_call_id,
@@ -309,7 +311,7 @@ function buildConversationHistory(messages: DatabaseMessage[]) {
 // Helper to get the next message order for a conversation
 async function getNextMessageOrder(
   supabaseClient: SupabaseClient,
-  conversationId: string,
+  conversationId: string
 ): Promise<number> {
   const { data: lastMsg } = await supabaseClient
     .from("messages")
@@ -337,7 +339,7 @@ function safeJsonParse(jsonString: string): unknown {
 async function executeToolCall(
   supabaseClient: SupabaseClient,
   toolCall: ToolCallItem,
-  userId: string,
+  userId: string
 ): Promise<ToolResult> {
   const { name, arguments: args } = toolCall.function;
   const parsedArgs = safeJsonParse(args);
@@ -350,13 +352,14 @@ async function executeToolCall(
     switch (name) {
       case "store_user_info": {
         const { user_name } = parsedArgs as { user_name: string };
-        await supabaseClient
-          .from("onboarding")
-          .upsert({
+        await supabaseClient.from("onboarding").upsert(
+          {
             user_id: userId,
             user_name,
             current_step: 2,
-          }, { onConflict: "user_id" });
+          },
+          { onConflict: "user_id" }
+        );
         return { success: true, user_name };
       }
 
@@ -365,14 +368,15 @@ async function executeToolCall(
           business_name: string;
           business_type: string;
         };
-        await supabaseClient
-          .from("onboarding")
-          .upsert({
+        await supabaseClient.from("onboarding").upsert(
+          {
             user_id: userId,
             business_name,
             business_type,
             current_step: 3,
-          }, { onConflict: "user_id" });
+          },
+          { onConflict: "user_id" }
+        );
         return { success: true, business_name, business_type };
       }
 
@@ -381,14 +385,15 @@ async function executeToolCall(
           business_city: string;
           phone_number: string;
         };
-        await supabaseClient
-          .from("onboarding")
-          .upsert({
+        await supabaseClient.from("onboarding").upsert(
+          {
             user_id: userId,
             business_city,
             phone_number,
             current_step: 4,
-          }, { onConflict: "user_id" });
+          },
+          { onConflict: "user_id" }
+        );
         return { success: true, business_city, phone_number };
       }
 
@@ -397,14 +402,15 @@ async function executeToolCall(
           opening_hours: string;
           services: string[];
         };
-        await supabaseClient
-          .from("onboarding")
-          .upsert({
+        await supabaseClient.from("onboarding").upsert(
+          {
             user_id: userId,
             opening_hours,
             services,
             current_step: 5,
-          }, { onConflict: "user_id" });
+          },
+          { onConflict: "user_id" }
+        );
         return { success: true, opening_hours, services };
       }
 
@@ -418,14 +424,15 @@ async function executeToolCall(
           .eq("user_id", userId)
           .single();
 
-        await supabaseClient
-          .from("onboarding")
-          .upsert({
+        await supabaseClient.from("onboarding").upsert(
+          {
             user_id: userId,
             ai_use_cases,
             completed: true,
             completed_at: new Date().toISOString(),
-          }, { onConflict: "user_id" });
+          },
+          { onConflict: "user_id" }
+        );
 
         // Update user profile if we have onboarding data
         if (currentOnboarding) {
@@ -539,28 +546,23 @@ Deno.serve(async (req: Request) => {
           .single();
 
         if (!existingOnboarding) {
-          await supabaseClient
-            .from("onboarding")
-            .insert({
-              user_id: userId,
-              conversation_id: finalConversation.id,
-              current_step: 1,
-              started_at: new Date().toISOString(),
-            });
+          await supabaseClient.from("onboarding").insert({
+            user_id: userId,
+            conversation_id: finalConversation.id,
+            current_step: 1,
+            started_at: new Date().toISOString(),
+          });
         }
 
         // Create welcome message for business setup
-        const welcomeText =
-          `👋 **Welcome! Let's complete your phone assistant setup**\n\nGreat! Now I need to collect some information about your business to personalize your phone assistant.\n\nThis will only take a few minutes, and I'll guide you through each step.\n\n**What I'll ask you about:**\n\n• Your name and business details\n• Contact information\n• Business hours and services\n• Which AI features you'd like to enable\n\nLet's start with the basics. **What's your full name?**`;
+        const welcomeText = `👋 **Welcome! Let's complete your phone assistant setup**\n\nGreat! Now I need to collect some information about your business to personalize your phone assistant.\n\nThis will only take a few minutes, and I'll guide you through each step.\n\n**What I'll ask you about:**\n\n• Your name and business details\n• Contact information\n• Business hours and services\n• Which AI features you'd like to enable\n\nLet's start with the basics. **What's your full name?**`;
 
-        await supabaseClient
-          .from("messages")
-          .insert({
-            conversation_id: finalConversation.id,
-            role: "assistant",
-            content: welcomeText,
-            message_order: 1,
-          });
+        await supabaseClient.from("messages").insert({
+          conversation_id: finalConversation.id,
+          role: "assistant",
+          content: welcomeText,
+          message_order: 1,
+        });
       } else if (convError) {
         throw convError;
       } else {
@@ -581,8 +583,8 @@ Deno.serve(async (req: Request) => {
       const typedMessages = (messages || []) as DatabaseMessage[];
       return createSuccessResponse({
         conversationId: finalConversation.id,
-        messages: typedMessages.sort((a, b) =>
-          (a.message_order ?? 0) - (b.message_order ?? 0)
+        messages: typedMessages.sort(
+          (a, b) => (a.message_order ?? 0) - (b.message_order ?? 0)
         ),
       });
     }
@@ -603,7 +605,7 @@ Deno.serve(async (req: Request) => {
       if (convError) {
         if (convError.code === "PGRST116") {
           return createErrorResponse(
-            "No onboarding conversation found. Please start a conversation first.",
+            "No onboarding conversation found. Please start a conversation first."
           );
         }
         throw convError;
@@ -614,7 +616,7 @@ Deno.serve(async (req: Request) => {
       // Save user message
       const currentOrder = await getNextMessageOrder(
         supabaseClient,
-        typedConversation.id,
+        typedConversation.id
       );
       const { error: userMsgError } = await supabaseClient
         .from("messages")
@@ -639,7 +641,7 @@ Deno.serve(async (req: Request) => {
 
       // Prepare conversation history for GPT
       const conversationHistory = buildConversationHistory(
-        (messages || []) as DatabaseMessage[],
+        (messages || []) as DatabaseMessage[]
       );
 
       // Call GPT-4-mini
@@ -651,24 +653,23 @@ Deno.serve(async (req: Request) => {
             content: SYSTEM_PROMPT,
           },
           ...conversationHistory,
-        ],
-        tools,
+        ] as any,
+        tools: [...tools],
         tool_choice: "auto",
         response_format: {
-          type: "json_schema",
-          json_schema: responseJsonSchema,
+          type: "json_object",
         },
       });
 
-      const response = completion.choices[0].message;
-      const toolCalls = (response.tool_calls || []) as ToolCallItem[];
+      const response = completion.choices[0]?.message;
+      const toolCalls = (response?.tool_calls || []) as ToolCallItem[];
 
       // Parse structured response
       let responseContent = "";
       let responseArtifacts = null;
-      if (response.content) {
+      if (response?.content) {
         const parsedResponse = handleChatResponse(
-          safeJsonParse(response.content),
+          safeJsonParse(response.content)
         );
         responseContent = parsedResponse?.text ?? response.content;
         responseArtifacts = parsedResponse?.artifacts ?? null;
@@ -718,7 +719,7 @@ Deno.serve(async (req: Request) => {
           const toolResult = await executeToolCall(
             supabaseClient,
             toolCall,
-            userId,
+            userId
           );
 
           // Save tool result
@@ -738,7 +739,7 @@ Deno.serve(async (req: Request) => {
           if (toolMsgError) {
             console.error(
               `Error saving tool result for ${toolCall.function.name}:`,
-              toolMsgError,
+              toolMsgError
             );
             throw toolMsgError;
           }
@@ -754,7 +755,7 @@ Deno.serve(async (req: Request) => {
           .order("message_order", { ascending: true });
 
         const updatedConversationHistory = buildConversationHistory(
-          (updatedMessages || []) as DatabaseMessage[],
+          (updatedMessages || []) as DatabaseMessage[]
         );
 
         // Make final API call with complete conversation including tool results
@@ -766,24 +767,23 @@ Deno.serve(async (req: Request) => {
               content: SYSTEM_PROMPT,
             },
             ...updatedConversationHistory,
-          ],
+          ] as any,
           response_format: {
-            type: "json_schema",
-            json_schema: responseJsonSchema,
+            type: "json_object",
           },
         });
 
-        const finalResponse = finalCompletion.choices[0].message;
+        const finalResponse = finalCompletion.choices[0]?.message;
 
         // Parse final structured response
         let finalResponseContent = "";
         let finalResponseArtifacts = null;
-        if (finalResponse.content) {
+        if (finalResponse?.content) {
           const parsedFinalResponse = handleChatResponse(
-            safeJsonParse(finalResponse.content),
+            safeJsonParse(finalResponse.content)
           );
-          finalResponseContent = parsedFinalResponse?.text ??
-            finalResponse.content;
+          finalResponseContent =
+            parsedFinalResponse?.text ?? finalResponse.content;
           finalResponseArtifacts = parsedFinalResponse?.artifacts ?? null;
         }
 
@@ -804,24 +804,22 @@ Deno.serve(async (req: Request) => {
           if (finalMsgError) {
             console.error(
               "Error saving final assistant response:",
-              finalMsgError,
+              finalMsgError
             );
             throw finalMsgError;
           }
         }
       } else if (responseContent) {
         // If no tool calls, save the response directly
-        await supabaseClient
-          .from("messages")
-          .insert({
-            conversation_id: typedConversation.id,
-            role: "assistant",
-            content: responseContent,
-            artifacts: responseArtifacts,
-            message_order: nextOrder,
-            created_at: new Date().toISOString(),
-            token_count: completion.usage?.completion_tokens ?? null,
-          });
+        await supabaseClient.from("messages").insert({
+          conversation_id: typedConversation.id,
+          role: "assistant",
+          content: responseContent,
+          artifacts: responseArtifacts,
+          message_order: nextOrder,
+          created_at: new Date().toISOString(),
+          token_count: completion.usage?.completion_tokens ?? null,
+        });
       }
 
       return createSuccessResponse({ success: true });
@@ -831,9 +829,8 @@ Deno.serve(async (req: Request) => {
   } catch (error: unknown) {
     console.error("Error in onboarding-chat function:", error);
 
-    const errorMessage = error instanceof Error
-      ? error.message
-      : "Unknown error occurred";
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error occurred";
     return new Response(
       JSON.stringify({
         error: "Internal server error",
@@ -842,7 +839,7 @@ Deno.serve(async (req: Request) => {
       {
         status: 500,
         headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-      },
+      }
     );
   }
 });
