@@ -1,0 +1,12 @@
+{
+    "imports": {
+      "@supabase/supabase-js": "npm:@supabase/supabase-js@2",
+      "@nangohq/node": "npm:@nangohq/node",
+      "@square/web-sdk": "npm:@square/web-sdk",
+      "square": "npm:square@42.3.0",
+      "openai": "npm:openai@4.28.0",
+      "zod": "npm:zod@3.22.0",
+      "zod-to-json-schema": "npm:zod-to-json-schema@3.22.0"
+    }
+  }
+  

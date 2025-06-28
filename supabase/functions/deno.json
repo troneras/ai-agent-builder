@@ -1,7 +1,9 @@
 {
   "compilerOptions": {
     "allowJs": true,
-    "lib": ["deno.window"],
+    "lib": [
+      "deno.window"
+    ],
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
@@ -13,20 +15,28 @@
     "noPropertyAccessFromIndexSignature": true,
     "exactOptionalPropertyTypes": false
   },
-  "importMap": "./import_map.json",
   "tasks": {
     "dev": "deno run --allow-net --allow-env --allow-read --watch index.ts"
   },
   "lint": {
     "rules": {
-      "tags": ["recommended"],
-      "include": ["ban-untagged-todo"],
-      "exclude": ["no-explicit-any"]
+      "tags": [
+        "recommended"
+      ],
+      "include": [
+        "ban-untagged-todo"
+      ],
+      "exclude": [
+        "no-explicit-any"
+      ]
     }
   },
   "fmt": {
     "files": {
-      "include": ["**/*.ts", "**/*.js"]
+      "include": [
+        "**/*.ts",
+        "**/*.js"
+      ]
     },
     "options": {
       "useTabs": false,
