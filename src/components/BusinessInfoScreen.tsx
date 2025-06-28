@@ -631,7 +631,7 @@ const BusinessInfoScreen: React.FC<BusinessInfoScreenProps> = ({
                                 ? 'Complete Business Info'
                                 : missingBookableServices
                                     ? 'Add Bookable Services'
-                                    : 'Continue Setup'
+                                    : 'Complete Setup'
                         }
                         <ArrowRight className="w-5 h-5" />
                     </button>
@@ -691,7 +691,7 @@ const BusinessInfoScreen: React.FC<BusinessInfoScreenProps> = ({
                     <p className="text-xl text-white/90 mb-8 leading-relaxed max-w-2xl mx-auto drop-shadow-md" style={{
                         textShadow: '1px 1px 2px rgba(0,0,0,0.7)'
                     }}>
-                        Here's what we imported from your Square account. Review this information and continue to set up your AI assistant.
+                        Here's what we imported from your Square account. Review this information and complete your setup to start using your AI assistant.
                     </p>
                 </div>
 

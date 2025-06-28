@@ -18,7 +18,7 @@ import { useUserProfile } from './hooks/useUserProfile';
 import { useOnboarding } from './hooks/useOnboarding';
 import { authHelpers, supabase } from './lib/supabase';
 
-type AppView = 'landing' | 'dashboard' | 'square-connection' | 'business-import' | 'business-info' | 'onboarding';
+type AppView = 'landing' | 'dashboard' | 'square-connection' | 'business-import' | 'business-info';
 
 function App() {
   const [showAuth, setShowAuth] = useState(false);
@@ -90,8 +90,8 @@ function App() {
             );
 
             if (hasStartedOnboarding && !onboarding.completed) {
-              // Import done and onboarding started but not completed - go to onboarding
-              setCurrentView('onboarding');
+              // Import done and onboarding started but not completed - go to business info
+              setCurrentView('business-info');
             } else if (hasStartedOnboarding && onboarding.completed) {
               // Everything completed - go to dashboard
               setCurrentView('dashboard');
@@ -179,9 +179,33 @@ function App() {
     setCurrentView('business-info');
   };
 
-  const handleBusinessInfoContinue = () => {
-    // When user continues from business info, move to onboarding chat
-    setCurrentView('onboarding');
+  const handleBusinessInfoContinue = async () => {
+    // When user continues from business info, complete onboarding directly
+    if (!user) return;
+
+    try {
+      // Mark onboarding as completed
+      const { error } = await supabase
+        .from('onboarding')
+        .update({
+          completed: true,
+          current_step: 999, // Final step
+        })
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('Error completing onboarding:', error);
+        throw error;
+      }
+
+      console.log('Onboarding completed successfully');
+
+      // Go to dashboard
+      setCurrentView('dashboard');
+    } catch (error) {
+      console.error('Error during onboarding completion:', error);
+      alert('Failed to complete setup. Please try again.');
+    }
   };
 
   const handleBusinessInfoReimport = async () => {
@@ -261,7 +285,7 @@ function App() {
     );
   }
 
-  if (currentView === 'business-info' || currentView === 'onboarding') {
+  if (currentView === 'business-info') {
     return (
       <BusinessInfoScreen
         onContinue={handleBusinessInfoContinue}
@@ -271,13 +295,7 @@ function App() {
     );
   }
 
-  // if (currentView === 'onboarding') {
-  //   return (
-  //     <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600">
-  //       <OnboardingChat onComplete={handleOnboardingComplete} onSignOut={handleSignOut} />
-  //     </div>
-  //   );
-  // }
+
 
   // Landing page view
   return (
