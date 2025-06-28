@@ -72,7 +72,18 @@ const BusinessImportScreen: React.FC<BusinessImportScreenProps> = ({
 
     // Initialize import tasks on component mount
     useEffect(() => {
-        if (!user || !connectionId) return;
+        if (!user) {
+            console.log('No user available for import initialization');
+            return;
+        }
+
+        if (!connectionId) {
+            console.error('No connection ID available for import initialization');
+            setLoading(false);
+            return;
+        }
+
+        console.log('Initializing import for user:', user.id, 'connection:', connectionId);
 
         const initializeImport = async () => {
             try {
@@ -109,6 +120,7 @@ const BusinessImportScreen: React.FC<BusinessImportScreenProps> = ({
 
                         // Trigger the import processor to start processing tasks
                         try {
+                            console.log('Triggering import processor for user:', user.id, 'connection:', connectionId);
                             const { error: processError } = await supabase.functions.invoke('import-processor', {
                                 body: {
                                     action: 'process_all_pending',
@@ -118,11 +130,31 @@ const BusinessImportScreen: React.FC<BusinessImportScreenProps> = ({
 
                             if (processError) {
                                 console.error('Error triggering import processor:', processError);
+                                // Update tasks to show the error
+                                await supabase
+                                    .from('import_tasks')
+                                    .update({
+                                        status: 'failed',
+                                        error_message: `Failed to start import: ${processError.message}`,
+                                        progress_message: 'Import failed to start'
+                                    })
+                                    .eq('user_id', user.id)
+                                    .eq('connection_id', connectionId);
                             } else {
                                 console.log('Import processor triggered successfully');
                             }
                         } catch (error) {
                             console.error('Error invoking import processor:', error);
+                            // Update tasks to show the error
+                            await supabase
+                                .from('import_tasks')
+                                .update({
+                                    status: 'failed',
+                                    error_message: `Failed to start import: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                                    progress_message: 'Import failed to start'
+                                })
+                                .eq('user_id', user.id)
+                                .eq('connection_id', connectionId);
                         }
                     }
                 }
@@ -188,6 +220,9 @@ const BusinessImportScreen: React.FC<BusinessImportScreenProps> = ({
 
     const handleRetryTask = async (taskId: string) => {
         try {
+            console.log('Retrying task:', taskId);
+
+            // Reset task status
             const { error } = await supabase
                 .from('import_tasks')
                 .update({
@@ -199,6 +234,43 @@ const BusinessImportScreen: React.FC<BusinessImportScreenProps> = ({
 
             if (error) {
                 console.error('Error retrying task:', error);
+                return;
+            }
+
+            // Trigger the import processor for this specific task
+            try {
+                const { error: processError } = await supabase.functions.invoke('import-processor', {
+                    body: {
+                        action: 'process_task',
+                        taskId: taskId
+                    }
+                });
+
+                if (processError) {
+                    console.error('Error triggering import processor for retry:', processError);
+                    // Update task to show the error
+                    await supabase
+                        .from('import_tasks')
+                        .update({
+                            status: 'failed',
+                            error_message: `Failed to retry import: ${processError.message}`,
+                            progress_message: 'Retry failed'
+                        })
+                        .eq('id', taskId);
+                } else {
+                    console.log('Import processor triggered successfully for retry');
+                }
+            } catch (error) {
+                console.error('Error invoking import processor for retry:', error);
+                // Update task to show the error
+                await supabase
+                    .from('import_tasks')
+                    .update({
+                        status: 'failed',
+                        error_message: `Failed to retry import: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                        progress_message: 'Retry failed'
+                    })
+                    .eq('id', taskId);
             }
         } catch (error) {
             console.error('Error retrying task:', error);
@@ -229,6 +301,24 @@ const BusinessImportScreen: React.FC<BusinessImportScreenProps> = ({
         return (
             <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center">
                 <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin"></div>
+            </div>
+        );
+    }
+
+    if (!connectionId) {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center">
+                <div className="text-center text-white">
+                    <AlertCircle className="w-16 h-16 mx-auto mb-4 text-red-400" />
+                    <h2 className="text-2xl font-bold mb-2">Connection Error</h2>
+                    <p className="mb-4">No Square connection found. Please reconnect your Square account.</p>
+                    <button
+                        onClick={onSignOut}
+                        className="px-6 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
+                    >
+                        Back to Connection
+                    </button>
+                </div>
             </div>
         );
     }

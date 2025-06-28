@@ -112,19 +112,17 @@ const BusinessInfoScreen: React.FC<BusinessInfoScreenProps> = ({
     }, [onboarding]);
 
     const handleReimport = async () => {
-        if (!user || !connectionId) return;
+        if (!user || !connectionId) {
+            console.error('Missing user or connection ID for reimport');
+            return;
+        }
 
         setLoading(true);
         try {
-            // Delete existing import tasks
-            await supabase
-                .from('import_tasks')
-                .delete()
-                .eq('user_id', user.id)
-                .eq('connection_id', connectionId);
+            console.log('Starting reimport process for user:', user.id, 'connection:', connectionId);
 
             // Clear existing onboarding data (keep user_id and basic info)
-            await supabase
+            const { error: updateOnboardingError } = await supabase
                 .from('onboarding')
                 .update({
                     merchant_id: null,
@@ -138,7 +136,83 @@ const BusinessInfoScreen: React.FC<BusinessInfoScreenProps> = ({
                 })
                 .eq('user_id', user.id);
 
-            // Trigger reimport
+            if (updateOnboardingError) {
+                console.error('Error updating onboarding data:', updateOnboardingError);
+                throw updateOnboardingError;
+            }
+
+            console.log('Onboarding data cleared successfully');
+
+            // First, let's check if we can actually see the existing tasks
+            console.log('Checking for existing tasks with params:', { user_id: user.id, connection_id: connectionId });
+            const { data: existingTasks, error: selectError } = await supabase
+                .from('import_tasks')
+                .select('*')
+                .eq('user_id', user.id)
+                .eq('connection_id', connectionId);
+
+            if (selectError) {
+                console.error('Error selecting existing tasks:', selectError);
+                throw selectError;
+            }
+
+            console.log('Found existing tasks:', existingTasks?.length, existingTasks);
+
+            if (!existingTasks || existingTasks.length === 0) {
+                console.log('No existing tasks found to reset. This indicates the initial import setup may have failed.');
+                throw new Error('No import tasks found to reset. Please try reconnecting your Square account.');
+            }
+
+            // Reset existing import tasks to pending status (much simpler and avoids RLS issues)
+            const { data: resetTasks, error: resetTasksError } = await supabase
+                .from('import_tasks')
+                .update({
+                    status: 'pending',
+                    progress_message: 'Preparing to reimport data...',
+                    error_message: null,
+                    data: null,
+                    retry_count: 0,
+                    started_at: null,
+                    completed_at: null
+                })
+                .eq('user_id', user.id)
+                .eq('connection_id', connectionId)
+                .select();
+
+            if (resetTasksError) {
+                console.error('Error resetting import tasks:', resetTasksError);
+                throw resetTasksError;
+            }
+
+            console.log('Import tasks reset successfully:', resetTasks?.length);
+
+            // If no existing tasks found, we need to create them (this shouldn't happen in normal flow)
+            if (!resetTasks || resetTasks.length === 0) {
+                console.log('No existing tasks found, this might indicate a problem with the initial import setup');
+                throw new Error('No import tasks found to reset. Please try reconnecting your Square account.');
+            }
+
+            // Trigger the import processor to start processing tasks
+            try {
+                const { error: processError } = await supabase.functions.invoke('import-processor', {
+                    body: {
+                        action: 'process_all_pending',
+                        userId: user.id
+                    }
+                });
+
+                if (processError) {
+                    console.error('Error triggering import processor:', processError);
+                    throw processError;
+                }
+
+                console.log('Import processor triggered successfully for reimport');
+            } catch (processorError) {
+                console.error('Error invoking import processor:', processorError);
+                throw processorError;
+            }
+
+            // Navigate to import screen
             if (onReimport) {
                 onReimport();
             } else {
@@ -147,6 +221,7 @@ const BusinessInfoScreen: React.FC<BusinessInfoScreenProps> = ({
             }
         } catch (error) {
             console.error('Error during reimport:', error);
+            alert('Failed to start reimport. Please try again or contact support.');
         } finally {
             setLoading(false);
         }

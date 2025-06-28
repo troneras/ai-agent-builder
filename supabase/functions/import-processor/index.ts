@@ -100,20 +100,30 @@ class ImportProcessor {
 
     if (userId) {
       query = query.eq("user_id", userId);
+      console.log(`Looking for pending tasks for user: ${userId}`);
     }
 
     const { data: tasks, error } = await query;
 
     if (error) {
+      console.error(`Database error fetching pending tasks:`, error);
       throw new Error(`Failed to fetch pending tasks: ${error.message}`);
     }
 
     if (!tasks || tasks.length === 0) {
-      console.log("No pending tasks found");
+      console.log(
+        userId
+          ? `No pending tasks found for user ${userId}`
+          : "No pending tasks found",
+      );
       return;
     }
 
-    console.log(`Processing ${tasks.length} pending tasks`);
+    console.log(
+      `Processing ${tasks.length} pending tasks${
+        userId ? ` for user ${userId}` : ""
+      }`,
+    );
 
     // Process tasks sequentially by user to avoid conflicts
     const tasksByUser = tasks.reduce(

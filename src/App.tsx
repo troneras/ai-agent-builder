@@ -184,9 +184,36 @@ function App() {
     setCurrentView('onboarding');
   };
 
-  const handleBusinessInfoReimport = () => {
-    // When user wants to reimport, go back to import screen
-    setCurrentView('business-import');
+  const handleBusinessInfoReimport = async () => {
+    // When user wants to reimport, ensure we have the connection ID and go back to import screen
+    if (!user) return;
+
+    try {
+      // Ensure we have the connection ID for the import screen
+      if (!squareConnectionId) {
+        const { data: connection } = await supabase
+          .from('connections')
+          .select('connection_id')
+          .eq('user_id', user.id)
+          .eq('status', 'active')
+          .single();
+
+        if (connection) {
+          setSquareConnectionId(connection.connection_id);
+        } else {
+          console.error('No active Square connection found');
+          // If no connection found, redirect to connection page
+          setCurrentView('square-connection');
+          return;
+        }
+      }
+
+      setCurrentView('business-import');
+    } catch (error) {
+      console.error('Error during reimport setup:', error);
+      // Fall back to connection page if we can't get connection
+      setCurrentView('square-connection');
+    }
   };
 
 
