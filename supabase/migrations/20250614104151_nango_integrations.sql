@@ -109,7 +109,8 @@ CREATE TRIGGER update_connections_updated_at
 
 -- Insert some common integrations as examples
 INSERT INTO integrations (ext_integration_id, category, name, description, auth_type, icon) VALUES
-  ('squareup-sandbox', 'payments', 'Square', 'Connect your Square account to accept payments and access transaction data through your AI phone system', 'oauth2', 'squareup');
+  ('squareup-sandbox', 'payments', 'Square', 'Connect your Square account to accept payments and access transaction data through your AI phone system', 'oauth2', 'squareup'),
+  ('squareup', 'payments', 'Square', 'Connect your Square account to accept payments and access transaction data through your AI phone system', 'oauth2', 'squareup');
 
 -- Add comments for documentation
 COMMENT ON TABLE integrations IS 'Available integrations that users can connect to via Nango';

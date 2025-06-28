@@ -25,6 +25,10 @@ import {
   createInternalErrorResponse,
   createSuccessResponse,
 } from "../_shared/response-utils.ts";
+import {
+  getSquareProviderConfigKey,
+  isSquareProduction,
+} from "../_shared/square-config.ts";
 
 // Type definitions
 interface RequestBody {
@@ -43,10 +47,13 @@ async function getSquareService(
   try {
     const connectionInfo = await nangoService.getConnection(
       connectionId,
-      "squareup-sandbox",
+      getSquareProviderConfigKey(),
     );
 
-    return new SquareService(connectionInfo.credentials.access_token, true); // true for sandbox
+    return new SquareService(
+      connectionInfo.credentials.access_token,
+      !isSquareProduction(),
+    ); // true for sandbox, false for production
   } catch (error) {
     console.error("Error getting Square service:", error);
     throw new Error(

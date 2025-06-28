@@ -1,4 +1,5 @@
 import { NangoService, WebhookPayload } from "./nango-service.ts";
+import { getSquareProviderConfigKey } from "./square-config.ts";
 
 /**
  * Handle successful authentication action
@@ -48,7 +49,7 @@ export async function handleSuccessfulAuthAction(
     console.log("[handleSuccessfulAuthAction] Connection successfully stored");
 
     // Trigger import process for Square connections
-    if (providerConfigKey === "squareup-sandbox") {
+    if (providerConfigKey === getSquareProviderConfigKey()) {
       console.log(
         "[handleSuccessfulAuthAction] Starting Square import process for user:",
         userId,
@@ -139,9 +140,57 @@ export async function processWebhookAction(
     webhookPayload,
   );
 
-  const { success, connectionId, endUser, providerConfigKey, error, type } =
-    webhookPayload;
-  const userId = endUser.endUserId;
+  const {
+    success,
+    connectionId,
+    endUser,
+    end_user,
+    providerConfigKey,
+    error,
+    type,
+  } = webhookPayload;
+
+  // Extract userId from either endUser.endUserId or end_user.id
+  let userId: string | undefined;
+  if (endUser?.endUserId) {
+    userId = endUser.endUserId;
+  } else if (end_user?.id) {
+    userId = end_user.id;
+  }
+
+  // Handle webhooks without user information (common for error webhooks)
+  if (!userId) {
+    console.warn(
+      "[processWebhookAction] Webhook received without user information - this is common for error webhooks:",
+      {
+        type,
+        success,
+        connectionId,
+        providerConfigKey,
+        error: typeof error === "object" ? error.description : error,
+      },
+    );
+
+    // For auth error webhooks, we can still log the error even without user info
+    if (type === "auth" && !success && error) {
+      const errorMessage = typeof error === "object"
+        ? error.description
+        : error;
+      console.error(
+        `[processWebhookAction] Authentication failed for connection ${connectionId} on provider ${providerConfigKey}: ${errorMessage}`,
+      );
+
+      // Could potentially store this error in a logs table or send notifications
+      // but for now, we'll just log it and return successfully
+      return;
+    }
+
+    // For other cases without user info, log and skip processing
+    console.info(
+      "[processWebhookAction] Skipping webhook processing due to missing user information",
+    );
+    return;
+  }
 
   if (type === "auth") {
     if (success) {
@@ -152,11 +201,14 @@ export async function processWebhookAction(
         providerConfigKey,
       );
     } else if (error) {
+      const errorMessage = typeof error === "object"
+        ? error.description
+        : error;
       await handleFailedAuthAction(
         userId,
         connectionId,
         providerConfigKey,
-        error,
+        errorMessage,
       );
     }
   }

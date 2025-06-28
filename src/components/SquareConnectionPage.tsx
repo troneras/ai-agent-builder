@@ -16,6 +16,7 @@ import {
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
 import Logo from './Logo';
+import { getSquareProviderConfigKey } from '../utils/square-config';
 
 interface SquareConnectionPageProps {
   onConnected: () => void;
@@ -41,7 +42,7 @@ const SquareConnectionPage: React.FC<SquareConnectionPageProps> = ({
       const { data: integration, error: integrationError } = await supabase
         .from('integrations')
         .select('*')
-        .eq('ext_integration_id', 'squareup-sandbox')
+        .eq('ext_integration_id', getSquareProviderConfigKey())
         .single();
 
       if (integrationError || !integration) {

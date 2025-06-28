@@ -4,16 +4,29 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 // Type definitions
 export interface WebhookPayload {
   type: string;
-  operation: string;
+  operation?: string;
   success: boolean;
   connectionId: string;
-  endUser: {
+  authMode?: string;
+  environment: string;
+  provider?: string;
+  from?: string;
+  providerConfigKey: string;
+  // User information (may not be present in all webhook types)
+  endUser?: {
     endUserId: string;
     organizationId?: string;
   };
-  providerConfigKey: string;
-  environment: string;
-  error?: string;
+  end_user?: {
+    id: string;
+    email?: string;
+    display_name?: string;
+  };
+  // Error can be a string or object
+  error?: string | {
+    description: string;
+    type: string;
+  };
 }
 
 export interface NangoCredentials {
@@ -125,6 +138,7 @@ export class NangoService {
     providerConfigKey: string,
   ): Promise<NangoConnectionInfo> {
     try {
+      console.log("Getting connection for connectionId:", connectionId, "and providerConfigKey:", providerConfigKey);
       const connection = await this.client.getConnection(
         connectionId,
         providerConfigKey,

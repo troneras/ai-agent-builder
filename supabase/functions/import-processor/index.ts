@@ -26,6 +26,10 @@ import {
   createErrorResponse,
   createSuccessResponse,
 } from "../_shared/response-utils.ts";
+import {
+  getSquareProviderConfigKey,
+  isSquareProduction,
+} from "../_shared/square-config.ts";
 
 // Environment variables
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -241,7 +245,7 @@ class ImportProcessor {
   private async getSquareService(connectionId: string): Promise<SquareService> {
     // Get connection credentials from Nango
     const connectionInfo = await this.nangoService.getConnection(
-      "squareup-sandbox",
+      getSquareProviderConfigKey(),
       connectionId,
     );
 
@@ -250,8 +254,11 @@ class ImportProcessor {
     }
 
     // Create Square service with the access token
-    // Using sandbox for now - in production, check the connection config
-    return new SquareService(connectionInfo.credentials.access_token, true);
+    // Environment-dependent: sandbox vs production based on SQUARE_ENV
+    return new SquareService(
+      connectionInfo.credentials.access_token,
+      !isSquareProduction(),
+    );
   }
 
   private async importMerchantData(squareService: SquareService): Promise<any> {
