@@ -245,6 +245,33 @@ const BusinessInfoScreen: React.FC<BusinessInfoScreenProps> = ({
         return `${minutes}m`;
     };
 
+    // Validation logic
+    const isBusinessInfoComplete = () => {
+        if (!onboarding) return false;
+
+        const requiredFields = [
+            onboarding.business_name,
+            onboarding.phone_number,
+            onboarding.business_city || onboarding.full_address // At least one address field
+        ];
+
+        return requiredFields.every(field => field && field.trim().length > 0);
+    };
+
+    const hasBookableService = () => {
+        if (!enhancedCatalogData?.services || enhancedCatalogData.services.length === 0) {
+            return false;
+        }
+
+        return enhancedCatalogData.services.some(service =>
+            service.variations?.some(variation => variation.availableForBooking === true)
+        );
+    };
+
+    const canContinue = isBusinessInfoComplete() && hasBookableService();
+    const missingBusinessInfo = !isBusinessInfoComplete();
+    const missingBookableServices = !hasBookableService();
+
     if (onboardingLoading && !embedded) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center">
@@ -509,10 +536,77 @@ const BusinessInfoScreen: React.FC<BusinessInfoScreenProps> = ({
                 </div>
             )}
 
+            {/* Validation Messages */}
+            {!canContinue && (missingBusinessInfo || missingBookableServices) && (
+                <div className="glass-morphism rounded-2xl p-6 border-2 border-red-400/50">
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className="w-12 h-12 bg-red-500/20 rounded-xl flex items-center justify-center">
+                            <AlertCircle className="w-6 h-6 text-red-300" />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-semibold text-white">Setup Required</h3>
+                            <p className="text-white/70">Please complete the following before continuing</p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-3">
+                        {missingBusinessInfo && (
+                            <div className="p-4 bg-red-500/10 rounded-lg border border-red-400/20">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <AlertCircle className="w-5 h-5 text-red-300" />
+                                    <h4 className="text-white font-medium">Incomplete Business Information</h4>
+                                </div>
+                                <p className="text-white/80 text-sm mb-3">
+                                    Your Square account is missing required business information. Please ensure you have:
+                                </p>
+                                <ul className="text-white/70 text-sm space-y-1 ml-4">
+                                    <li>• Business name</li>
+                                    <li>• Phone number</li>
+                                    <li>• Business address or city</li>
+                                </ul>
+                            </div>
+                        )}
+
+                        {missingBookableServices && (
+                            <div className="p-4 bg-red-500/10 rounded-lg border border-red-400/20">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <AlertCircle className="w-5 h-5 text-red-300" />
+                                    <h4 className="text-white font-medium">No Bookable Services Found</h4>
+                                </div>
+                                <p className="text-white/80 text-sm mb-3">
+                                    You need at least one service with a bookable variation to use the AI assistant. Please:
+                                </p>
+                                <ul className="text-white/70 text-sm space-y-1 ml-4">
+                                    <li>• Add services to your Square catalog</li>
+                                    <li>• Enable booking for at least one service variation</li>
+                                    <li>• Set service duration and pricing</li>
+                                </ul>
+                            </div>
+                        )}
+
+                        <div className="pt-2">
+                            <p className="text-white/80 text-sm mb-4">
+                                Update your information in Square, then reimport your data to continue.
+                            </p>
+                            {connectionId && (
+                                <button
+                                    onClick={handleReimport}
+                                    disabled={loading}
+                                    className="inline-flex items-center gap-2 px-6 py-3 bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 rounded-lg transition-colors disabled:opacity-50 border border-blue-400/30"
+                                >
+                                    <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+                                    Update & Reimport Data
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Actions */}
             {!embedded && (
                 <div className="flex items-center justify-between pt-6">
-                    {connectionId && (
+                    {connectionId && canContinue && (
                         <button
                             onClick={handleReimport}
                             disabled={loading}
@@ -525,9 +619,20 @@ const BusinessInfoScreen: React.FC<BusinessInfoScreenProps> = ({
 
                     <button
                         onClick={onContinue}
-                        className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white rounded-lg font-semibold transition-all transform hover:scale-105"
+                        disabled={!canContinue}
+                        className={`flex items-center gap-2 px-8 py-3 rounded-lg font-semibold transition-all ${canContinue
+                            ? 'bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white transform hover:scale-105'
+                            : 'bg-gray-600 text-gray-300 cursor-not-allowed opacity-50'
+                            }`}
                     >
-                        Continue Setup
+                        {missingBusinessInfo && missingBookableServices
+                            ? 'Complete Setup Required'
+                            : missingBusinessInfo
+                                ? 'Complete Business Info'
+                                : missingBookableServices
+                                    ? 'Add Bookable Services'
+                                    : 'Continue Setup'
+                        }
                         <ArrowRight className="w-5 h-5" />
                     </button>
                 </div>
