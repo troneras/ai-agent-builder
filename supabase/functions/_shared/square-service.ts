@@ -94,7 +94,7 @@ export class SquareService {
   /**
    * Get merchant information
    */
-  private async getMerchantInfo() {
+  async getMerchantInfo() {
     try {
       const result = await this.client.merchants.list();
 
@@ -118,7 +118,7 @@ export class SquareService {
   /**
    * Get all business locations
    */
-  private async getLocations() {
+  async getLocations() {
     try {
       const result = await this.client.locations.list();
 
@@ -168,7 +168,7 @@ export class SquareService {
   /**
    * Get catalog information (services and products)
    */
-  private async getCatalogInfo() {
+  async getCatalogInfo() {
     try {
       const result = await this.client.catalog.list({
         types: "ITEM",

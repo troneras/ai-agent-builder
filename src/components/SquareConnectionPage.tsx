@@ -1,19 +1,16 @@
 import React, { useState } from 'react';
-import { 
-  CreditCard, 
-  Calendar, 
-  BarChart3, 
-  Shield, 
-  Clock, 
-  CheckCircle, 
-  ArrowRight, 
+import {
+  CreditCard,
+  Calendar,
+  BarChart3,
+  Shield,
+  Clock,
+  CheckCircle,
+  ArrowRight,
   ExternalLink,
   Zap,
-  Users,
-  TrendingUp,
   Star,
   LogOut,
-  ArrowLeft,
   Sparkles
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
@@ -22,14 +19,12 @@ import Logo from './Logo';
 
 interface SquareConnectionPageProps {
   onConnected: () => void;
-  onSkipped: () => void;
   onSignOut: () => void;
 }
 
-const SquareConnectionPage: React.FC<SquareConnectionPageProps> = ({ 
-  onConnected, 
-  onSkipped, 
-  onSignOut 
+const SquareConnectionPage: React.FC<SquareConnectionPageProps> = ({
+  onConnected,
+  onSignOut
 }) => {
   const { user } = useAuth();
   const [isConnecting, setIsConnecting] = useState(false);
@@ -150,7 +145,7 @@ const SquareConnectionPage: React.FC<SquareConnectionPageProps> = ({
       rating: 5
     },
     {
-      name: "Mike Thompson", 
+      name: "Mike Thompson",
       business: "Thompson Plumbing",
       quote: "The Square integration made everything seamless. Customers can schedule emergency calls and pay instantly. It's like having a full-time receptionist.",
       rating: 5
@@ -163,7 +158,7 @@ const SquareConnectionPage: React.FC<SquareConnectionPageProps> = ({
       <header className="relative z-10 p-6">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <Logo size="lg" variant="white" showText={true} />
-          
+
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 px-3 py-2 bg-white/10 rounded-lg">
               <div className="w-8 h-8 bg-white/20 text-white rounded-full flex items-center justify-center font-semibold text-sm">
@@ -194,18 +189,18 @@ const SquareConnectionPage: React.FC<SquareConnectionPageProps> = ({
             <Sparkles className="w-4 h-4" />
             Step 1 of 2: Connect Your Business
           </div>
-          
+
           <h1 className="text-4xl lg:text-6xl font-bold text-white mb-6 leading-tight">
             Connect Your
-            <span className="block text-white drop-shadow-lg" style={{ 
-              textShadow: '2px 2px 4px rgba(0,0,0,0.5), 0 0 20px rgba(255,255,255,0.3)' 
+            <span className="block text-white drop-shadow-lg" style={{
+              textShadow: '2px 2px 4px rgba(0,0,0,0.5), 0 0 20px rgba(255,255,255,0.3)'
             }}>
               Square Account
             </span>
           </h1>
-          
-          <p className="text-xl lg:text-2xl text-white/90 mb-8 leading-relaxed max-w-3xl mx-auto drop-shadow-md" style={{ 
-            textShadow: '1px 1px 2px rgba(0,0,0,0.7)' 
+
+          <p className="text-xl lg:text-2xl text-white/90 mb-8 leading-relaxed max-w-3xl mx-auto drop-shadow-md" style={{
+            textShadow: '1px 1px 2px rgba(0,0,0,0.7)'
           }}>
             Import your business information instantly and unlock powerful phone-based booking and payment features.
           </p>
@@ -230,7 +225,7 @@ const SquareConnectionPage: React.FC<SquareConnectionPageProps> = ({
                 </>
               )}
             </button>
-            
+
             <a
               href="https://squareup.com/signup?affiliate_id=cutcall"
               target="_blank"
@@ -248,14 +243,6 @@ const SquareConnectionPage: React.FC<SquareConnectionPageProps> = ({
               <p className="text-red-100 text-sm">{connectionError}</p>
             </div>
           )}
-
-          {/* Skip Option */}
-          <button
-            onClick={onSkipped}
-            className="text-white/70 hover:text-white text-sm underline transition-colors"
-          >
-            Skip for now (manual setup)
-          </button>
         </div>
 
         {/* Benefits Grid */}
@@ -284,10 +271,10 @@ const SquareConnectionPage: React.FC<SquareConnectionPageProps> = ({
               Why Connect Square?
             </h2>
             <p className="text-white/90 text-lg mb-6">
-              Square integration transforms your phone assistant into a complete business solution. 
+              Square integration transforms your phone assistant into a complete business solution.
               Instead of manually entering all your business details, we'll import everything instantly.
             </p>
-            
+
             <ul className="space-y-3">
               {features.map((feature, index) => (
                 <li key={index} className="flex items-start gap-3 text-white/90">
@@ -305,7 +292,7 @@ const SquareConnectionPage: React.FC<SquareConnectionPageProps> = ({
               </div>
               <h3 className="text-xl font-bold text-white mb-2">Setup in Seconds</h3>
               <p className="text-white/80">
-                Connect once, and we'll handle the rest. Your phone assistant will be ready 
+                Connect once, and we'll handle the rest. Your phone assistant will be ready
                 to take calls, book appointments, and process payments immediately.
               </p>
             </div>
@@ -332,7 +319,7 @@ const SquareConnectionPage: React.FC<SquareConnectionPageProps> = ({
           <h2 className="text-3xl font-bold text-white text-center mb-8">
             What Business Owners Say
           </h2>
-          
+
           <div className="grid md:grid-cols-2 gap-8">
             {testimonials.map((testimonial, index) => (
               <div key={index} className="glass-morphism rounded-2xl p-6">
@@ -360,10 +347,10 @@ const SquareConnectionPage: React.FC<SquareConnectionPageProps> = ({
           </div>
           <h3 className="text-xl font-bold text-white mb-4">Your Data is Safe</h3>
           <p className="text-white/90 mb-6 max-w-2xl mx-auto">
-            We use bank-level encryption and only access the minimum data needed to set up your phone assistant. 
+            We use bank-level encryption and only access the minimum data needed to set up your phone assistant.
             You can disconnect your Square account at any time, and we never store your payment information.
           </p>
-          
+
           <div className="flex flex-wrap justify-center gap-6 text-sm text-white/80">
             <div className="flex items-center gap-2">
               <CheckCircle className="w-4 h-4 text-green-400" />

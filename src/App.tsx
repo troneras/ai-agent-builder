@@ -10,18 +10,20 @@ import AuthForm from './components/AuthForm';
 import OnboardingChat from './components/OnboardingChat';
 import Dashboard from './components/Dashboard';
 import SquareConnectionPage from './components/SquareConnectionPage';
+import BusinessImportScreen from './components/BusinessImportScreen';
 import ParticleBackground from './components/ParticleBackground';
 import { useAuth } from './hooks/useAuth';
 import { useUserProfile } from './hooks/useUserProfile';
 import { useOnboarding } from './hooks/useOnboarding';
-import { authHelpers } from './lib/supabase';
+import { authHelpers, supabase } from './lib/supabase';
 
-type AppView = 'landing' | 'dashboard' | 'square-connection' | 'onboarding';
+type AppView = 'landing' | 'dashboard' | 'square-connection' | 'business-import' | 'onboarding';
 
 function App() {
   const [showAuth, setShowAuth] = useState(false);
   const [authMode, setAuthMode] = useState<'register' | 'login' | 'forgot-password'>('register');
   const [currentView, setCurrentView] = useState<AppView>('landing');
+  const [squareConnectionId, setSquareConnectionId] = useState<string | null>(null);
   const { user, loading } = useAuth();
   const { loading: profileLoading } = useUserProfile(user);
   const { onboarding, loading: onboardingLoading } = useOnboarding(user);
@@ -36,21 +38,8 @@ function App() {
         // Onboarding completed - go to dashboard
         setCurrentView('dashboard');
       } else {
-        // Check if user has started onboarding (has any data filled)
-        const hasStartedOnboarding = onboarding && (
-          onboarding.user_name || 
-          onboarding.business_name || 
-          onboarding.business_type ||
-          onboarding.current_step > 1
-        );
-
-        if (hasStartedOnboarding) {
-          // User has started onboarding - go to chat
-          setCurrentView('onboarding');
-        } else {
-          // New user - start with Square connection
-          setCurrentView('square-connection');
-        }
+        // Check if user has an active Square connection
+        checkSquareConnection();
       }
     } else {
       // User not logged in - go to landing
@@ -58,25 +47,77 @@ function App() {
     }
   }, [user, onboarding, loading, profileLoading, onboardingLoading]);
 
+  const checkSquareConnection = async () => {
+    if (!user) return;
+
+    try {
+      // Check for active Square connection
+      const { data: connection } = await supabase
+        .from('connections')
+        .select('connection_id')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .single();
+
+      if (connection) {
+        setSquareConnectionId(connection.connection_id);
+
+        // Check if import tasks exist and if any are still pending/processing
+        const { data: importTasks } = await supabase
+          .from('import_tasks')
+          .select('status')
+          .eq('user_id', user.id)
+          .eq('connection_id', connection.connection_id);
+
+        if (importTasks && importTasks.length > 0) {
+          const hasIncompleteImports = importTasks.some(task =>
+            task.status === 'pending' || task.status === 'processing' || task.status === 'retrying'
+          );
+          const allCompleted = importTasks.every(task => task.status === 'completed');
+
+          if (hasIncompleteImports) {
+            // Still importing - show import screen
+            setCurrentView('business-import');
+          } else if (allCompleted) {
+            // Import completed - check if onboarding is done
+            const hasStartedOnboarding = onboarding && (
+              onboarding.user_name ||
+              onboarding.business_name ||
+              onboarding.business_type ||
+              onboarding.current_step > 1
+            );
+
+            if (hasStartedOnboarding) {
+              setCurrentView('onboarding');
+            } else {
+              setCurrentView('onboarding'); // Start onboarding after import
+            }
+          } else {
+            // Some imports failed or mixed states - show import screen
+            setCurrentView('business-import');
+          }
+        } else {
+          // No import tasks yet - this will be handled by the business import screen
+          setCurrentView('business-import');
+        }
+      } else {
+        // No Square connection - go to connection page
+        setCurrentView('square-connection');
+      }
+    } catch (error) {
+      console.error('Error checking Square connection:', error);
+      // Default to Square connection if we can't determine status
+      setCurrentView('square-connection');
+    }
+  };
+
   const handleStartBuilding = () => {
     if (user) {
-      // User is logged in, check onboarding status
+      // User is logged in, check current state
       if (onboarding?.completed) {
         setCurrentView('dashboard');
       } else {
-        // Check if user should go to Square connection or onboarding chat
-        const hasStartedOnboarding = onboarding && (
-          onboarding.user_name || 
-          onboarding.business_name || 
-          onboarding.business_type ||
-          onboarding.current_step > 1
-        );
-
-        if (hasStartedOnboarding) {
-          setCurrentView('onboarding');
-        } else {
-          setCurrentView('square-connection');
-        }
+        checkSquareConnection();
       }
     } else {
       // User not logged in, show registration
@@ -92,7 +133,7 @@ function App() {
 
   const handleAuthComplete = () => {
     setShowAuth(false);
-    // The useEffect will handle the redirect based on onboarding status
+    // The useEffect will handle the redirect based on connection and onboarding status
   };
 
   const handleAuthClose = () => {
@@ -100,12 +141,12 @@ function App() {
   };
 
   const handleSquareConnected = () => {
-    // When Square is connected, move to onboarding chat
-    setCurrentView('onboarding');
+    // When Square is connected, we need to get the connection ID and go to import screen
+    checkSquareConnection();
   };
 
-  const handleSquareSkipped = () => {
-    // When Square is skipped, move to onboarding chat
+  const handleBusinessImportComplete = () => {
+    // When business import is completed, move to onboarding chat
     setCurrentView('onboarding');
   };
 
@@ -120,6 +161,7 @@ function App() {
 
   const handleSignOut = async () => {
     await authHelpers.signOut();
+    setSquareConnectionId(null);
     setCurrentView('landing');
   };
 
@@ -139,9 +181,18 @@ function App() {
 
   if (currentView === 'square-connection') {
     return (
-      <SquareConnectionPage 
+      <SquareConnectionPage
         onConnected={handleSquareConnected}
-        onSkipped={handleSquareSkipped}
+        onSignOut={handleSignOut}
+      />
+    );
+  }
+
+  if (currentView === 'business-import') {
+    return (
+      <BusinessImportScreen
+        connectionId={squareConnectionId || ''}
+        onComplete={handleBusinessImportComplete}
         onSignOut={handleSignOut}
       />
     );

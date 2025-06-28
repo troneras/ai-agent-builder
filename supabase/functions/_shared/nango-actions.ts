@@ -46,6 +46,49 @@ export async function handleSuccessfulAuthAction(
     });
 
     console.log("[handleSuccessfulAuthAction] Connection successfully stored");
+
+    // Trigger import process for Square connections
+    if (providerConfigKey === "squareup-sandbox") {
+      console.log(
+        "[handleSuccessfulAuthAction] Starting Square import process for user:",
+        userId,
+      );
+
+      try {
+        // Call the import processor to start processing tasks
+        const response = await fetch(
+          `${Deno.env.get("SUPABASE_URL")}/functions/v1/import-processor`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")}`,
+            },
+            body: JSON.stringify({
+              action: "process_all_pending",
+              userId: userId,
+            }),
+          },
+        );
+
+        if (!response.ok) {
+          console.error(
+            "[handleSuccessfulAuthAction] Failed to trigger import process:",
+            await response.text(),
+          );
+        } else {
+          console.log(
+            "[handleSuccessfulAuthAction] Import process triggered successfully",
+          );
+        }
+      } catch (error) {
+        console.error(
+          "[handleSuccessfulAuthAction] Error triggering import process:",
+          error,
+        );
+        // Don't throw here - the connection was successful, import can be retried later
+      }
+    }
   } catch (error) {
     console.error(
       "[handleSuccessfulAuthAction] Error handling successful auth:",
