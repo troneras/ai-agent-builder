@@ -14,6 +14,7 @@
 */
 
 import { NangoService, WebhookPayload } from "../_shared/nango-service.ts";
+import { processWebhookAction } from "../_shared/nango-actions.ts";
 import {
   createCorsResponse,
   createErrorResponse,
@@ -65,8 +66,8 @@ Deno.serve(async (req: Request) => {
       const webhookPayload: WebhookPayload = await req.json();
       console.log("Webhook payload:", webhookPayload);
 
-      // Process webhook using the shared service
-      await nangoService.processWebhook(webhookPayload);
+      // Process webhook using the action
+      await processWebhookAction(nangoService, webhookPayload);
 
       return createSuccessResponse({ received: true });
     }

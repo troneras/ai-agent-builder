@@ -41,6 +41,13 @@ export interface NangoConnectionInfo {
   providerConfigKey: string;
 }
 
+export interface ConnectionUpsertPayload {
+  userId: string;
+  integrationId: string;
+  connectionId: string;
+  providerConfigKey: string;
+}
+
 export class NangoService {
   private client: Nango;
   private supabaseClient: SupabaseClient;
@@ -143,109 +150,69 @@ export class NangoService {
   }
 
   /**
-   * Process webhook payload from Nango
+   * Get integration by provider config key
    */
-  async processWebhook(webhookPayload: WebhookPayload): Promise<void> {
-    console.log("Processing Nango webhook:", webhookPayload);
-
-    const { success, connectionId, endUser, providerConfigKey, error, type } =
-      webhookPayload;
-    const userId = endUser.endUserId;
-
-    if (type === "auth") {
-      if (success) {
-        await this.handleSuccessfulAuth(
-          userId,
-          connectionId,
-          providerConfigKey,
-        );
-      }
-      if (error) {
-        console.error("[handleSuccessfulAuth] Error handling failed auth:", error);
-      }
-    }
-  }
-
-  /**
-   * Handle successful authentication
-   */
-  private async handleSuccessfulAuth(
-    userId: string,
-    connectionId: string,
-    providerConfigKey: string,
-  ): Promise<void> {
+  async getIntegrationByProviderConfigKey(providerConfigKey: string) {
     try {
-      console.log(
-        "[handleSuccessfulAuth] userId:",
-        userId,
-        "connectionId:",
-        connectionId,
-        "providerConfigKey:",
-        providerConfigKey,
-      );
-      // Get integration info
       const { data: integration, error: integrationError } = await this
         .supabaseClient
         .from("integrations")
         .select("*")
         .eq("ext_integration_id", providerConfigKey)
         .single();
+
       if (integrationError) {
         console.error(
-          "[handleSuccessfulAuth] Error fetching integration:",
+          "Error fetching integration:",
           integrationError,
         );
+        throw integrationError;
       }
-      console.log("[handleSuccessfulAuth] integration:", integration);
 
-      if (integration) {
-        // Store the connection
-        const upsertPayload = {
-          user_id: userId,
-          integration_id: integration.id,
-          connection_id: connectionId,
-          status: "active",
-          metadata: {
-            provider: providerConfigKey,
-            connected_at: new Date().toISOString(),
-          },
-        };
-        console.log(
-          "[handleSuccessfulAuth] Upserting connection with payload:",
-          upsertPayload,
-        );
-        const { error: upsertError, data: upsertData } = await this
-          .supabaseClient.from("connections").upsert(
-            upsertPayload,
-            { onConflict: "user_id,integration_id" },
-          );
-        console.log("[handleSuccessfulAuth] Upsert result:", {
-          upsertError,
-          upsertData,
-        });
-        if (upsertError) {
-          console.error(
-            "[handleSuccessfulAuth] Upsert error while saving connection:",
-            upsertError,
-          );
-          throw new Error(
-            `Failed to save connection: ${upsertError.message || upsertError}`,
-          );
-        }
-      } else {
-        console.error(
-          "[handleSuccessfulAuth] Integration not found for providerConfigKey:",
-          providerConfigKey,
-        );
-      }
+      return integration;
     } catch (error) {
-      console.error(
-        "[handleSuccessfulAuth] Error handling successful auth:",
-        error,
-      );
+      console.error("Error getting integration:", error);
+      throw error;
     }
   }
 
+  /**
+   * Upsert connection record in database
+   */
+  async upsertConnection(payload: ConnectionUpsertPayload) {
+    try {
+      const upsertPayload = {
+        user_id: payload.userId,
+        integration_id: payload.integrationId,
+        connection_id: payload.connectionId,
+        status: "active",
+        metadata: {
+          provider: payload.providerConfigKey,
+          connected_at: new Date().toISOString(),
+        },
+      };
+
+      console.log("Upserting connection with payload:", upsertPayload);
+
+      const { error: upsertError, data: upsertData } = await this
+        .supabaseClient.from("connections").upsert(
+          upsertPayload,
+          { onConflict: "user_id,integration_id" },
+        );
+
+      if (upsertError) {
+        console.error("Upsert error while saving connection:", upsertError);
+        throw new Error(
+          `Failed to save connection: ${upsertError.message || upsertError}`,
+        );
+      }
+
+      return upsertData;
+    } catch (error) {
+      console.error("Error upserting connection:", error);
+      throw error;
+    }
+  }
 
   /**
    * Get user's active connection for a specific integration
