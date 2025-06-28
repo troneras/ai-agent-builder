@@ -60,14 +60,7 @@ interface EnhancedCatalogData {
     items?: SquareItem[];
 }
 
-interface ImportedCatalogData {
-    services?: string[];
-    enhanced_catalog_data?: EnhancedCatalogData;
-    has_catalog?: boolean;
-    catalog_items_count?: number;
-    catalog_services_count?: number;
-    catalog_categories_count?: number;
-}
+
 
 const BusinessInfoScreen: React.FC<BusinessInfoScreenProps> = ({
     onContinue,
@@ -105,46 +98,15 @@ const BusinessInfoScreen: React.FC<BusinessInfoScreenProps> = ({
         getConnectionId();
     }, [user]);
 
-    // Parse enhanced catalog data from services field
+    // Parse enhanced catalog data from catalog_data field
     useEffect(() => {
-        if (onboarding?.services) {
+        if (onboarding?.catalog_data) {
             try {
-                // Check if services is already parsed object or needs parsing
-                let catalogData;
-                if (typeof onboarding.services === 'string') {
-                    const parsedData = JSON.parse(onboarding.services);
-                    // Check if it has enhanced_catalog_data property
-                    catalogData = parsedData.enhanced_catalog_data || parsedData;
-                } else if (Array.isArray(onboarding.services)) {
-                    // Legacy format - just service names
-                    catalogData = {
-                        services: onboarding.services.map((name, index) => ({
-                            id: `legacy-service-${index}`,
-                            name,
-                            isService: true
-                        }))
-                    };
-                } else if (onboarding.services && typeof onboarding.services === 'object') {
-                    // Object format - check for enhanced_catalog_data property
-                    const importedData = onboarding.services as ImportedCatalogData;
-                    catalogData = importedData.enhanced_catalog_data || onboarding.services;
-                } else {
-                    catalogData = onboarding.services;
-                }
-                console.log('Parsed catalog data:', catalogData);
-                setEnhancedCatalogData(catalogData);
+                console.log('Onboarding catalog data:', onboarding.catalog_data);
+                setEnhancedCatalogData(onboarding.catalog_data);
             } catch (error) {
                 console.error('Error parsing catalog data:', error);
-                // Fallback to treating as simple array
-                if (Array.isArray(onboarding.services)) {
-                    setEnhancedCatalogData({
-                        services: onboarding.services.map((name, index) => ({
-                            id: `legacy-service-${index}`,
-                            name,
-                            isService: true
-                        }))
-                    });
-                }
+                setEnhancedCatalogData(null);
             }
         }
     }, [onboarding]);
@@ -171,7 +133,7 @@ const BusinessInfoScreen: React.FC<BusinessInfoScreenProps> = ({
                     business_city: null,
                     full_address: null,
                     opening_hours: null,
-                    services: null,
+                    catalog_data: null,
                     current_step: 0
                 })
                 .eq('user_id', user.id);

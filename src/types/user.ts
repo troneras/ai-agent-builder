@@ -45,7 +45,7 @@ export interface Onboarding {
   contact_email?: string;
   website?: string;
   opening_hours?: string;
-  services?: string[];
+  catalog_data?: Record<string, unknown>;
   ai_use_cases?: string[];
 
   // Timestamps

@@ -7,7 +7,7 @@ import TestimonialsSection from './components/TestimonialsSection';
 import PricingSection from './components/PricingSection';
 import Footer from './components/Footer';
 import AuthForm from './components/AuthForm';
-import OnboardingChat from './components/OnboardingChat';
+
 import Dashboard from './components/Dashboard';
 import SquareConnectionPage from './components/SquareConnectionPage';
 import BusinessImportScreen from './components/BusinessImportScreen';
@@ -86,7 +86,7 @@ function App() {
               onboarding.business_name ||
               onboarding.business_type ||
               onboarding.current_step > 1 ||
-              (onboarding.services && onboarding.services.length > 0)
+              onboarding.catalog_data
             );
 
             if (hasStartedOnboarding && !onboarding.completed) {
@@ -189,10 +189,7 @@ function App() {
     setCurrentView('business-import');
   };
 
-  const handleOnboardingComplete = () => {
-    // When onboarding is completed, redirect to dashboard
-    setCurrentView('dashboard');
-  };
+
 
   const handleBackToLanding = () => {
     setCurrentView('landing');
