@@ -13,31 +13,15 @@
   - Uses RLS policies for data access
 */
 
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import { Nango } from "@nangohq/node";
-
-// Constants
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-} as const;
+import { NangoService, WebhookPayload } from "../_shared/nango-service.ts";
+import {
+  createCorsResponse,
+  createErrorResponse,
+  createInternalErrorResponse,
+  createSuccessResponse,
+} from "../_shared/response-utils.ts";
 
 // Type definitions
-interface WebhookPayload {
-  type: string;
-  operation: string;
-  success: boolean;
-  connectionId: string;
-  endUser: {
-    endUserId: string;
-    organizationId?: string;
-  };
-  providerConfigKey: string;
-  environment: string;
-  error?: string;
-}
 
 interface RequestBody {
   action?: "create_session";
@@ -45,74 +29,13 @@ interface RequestBody {
   userId?: string;
 }
 
-// Utility functions
-function createErrorResponse(message: string, status = 400): Response {
-  return new Response(JSON.stringify({ error: message }), {
-    status,
-    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-  });
-}
-
-function createSuccessResponse(data: unknown): Response {
-  return new Response(JSON.stringify(data), {
-    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-  });
-}
-
-// Helper to send message to chat
-async function sendChatMessage(
-  supabaseClient: SupabaseClient,
-  userId: string,
-  message: string
-): Promise<void> {
-  try {
-    // Get the user's onboarding conversation
-    const { data: conversation } = await supabaseClient
-      .from("conversations")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("type", "onboarding")
-      .single();
-
-    if (!conversation) {
-      console.error("No onboarding conversation found for user:", userId);
-      return;
-    }
-
-    // Get next message order
-    const { data: lastMsg } = await supabaseClient
-      .from("messages")
-      .select("message_order")
-      .eq("conversation_id", conversation.id)
-      .order("message_order", { ascending: false })
-      .limit(1)
-      .single();
-
-    const nextOrder =
-      lastMsg && typeof lastMsg.message_order === "number"
-        ? lastMsg.message_order + 1
-        : 1;
-
-    // Insert the message
-    await supabaseClient.from("messages").insert({
-      conversation_id: conversation.id,
-      role: "assistant",
-      content: message,
-      message_order: nextOrder,
-      created_at: new Date().toISOString(),
-    });
-
-    console.log("Chat message sent successfully");
-  } catch (error) {
-    console.error("Error sending chat message:", error);
-  }
-}
+// Type definitions
 
 // Main handler
 Deno.serve(async (req: Request) => {
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: CORS_HEADERS });
+    return createCorsResponse();
   }
 
   try {
@@ -125,9 +48,12 @@ Deno.serve(async (req: Request) => {
       return createErrorResponse("Missing required environment variables", 500);
     }
 
-    // Initialize clients
-    const supabaseClient = createClient(supabaseUrl, supabaseKey);
-    const nango = new Nango({ secretKey: nangoSecretKey });
+    // Initialize Nango service
+    const nangoService = new NangoService(
+      nangoSecretKey,
+      supabaseUrl,
+      supabaseKey,
+    );
 
     const url = new URL(req.url);
     const pathname = url.pathname;
@@ -139,92 +65,8 @@ Deno.serve(async (req: Request) => {
       const webhookPayload: WebhookPayload = await req.json();
       console.log("Webhook payload:", webhookPayload);
 
-      const { success, connectionId, endUser, providerConfigKey, error } =
-        webhookPayload;
-      const userId = endUser.endUserId;
-
-      if (webhookPayload.type === "auth") {
-        if (success) {
-          try {
-            // Get integration info
-            const { data: integration } = await supabaseClient
-              .from("integrations")
-              .select("*")
-              .eq("ext_integration_id", providerConfigKey)
-              .single();
-
-            if (integration) {
-              // Store the connection
-              await supabaseClient.from("connections").upsert(
-                {
-                  user_id: userId,
-                  integration_id: integration.id,
-                  connection_id: connectionId,
-                  status: "active",
-                  metadata: {
-                    provider: providerConfigKey,
-                    connected_at: new Date().toISOString(),
-                  },
-                },
-                { onConflict: "user_id,integration_id" }
-              );
-
-              // Fetch Square business data automatically
-              try {
-                const squareServiceUrl = `${supabaseUrl}/functions/v1/square-service`;
-                const response = await fetch(squareServiceUrl, {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${supabaseKey}`,
-                  },
-                  body: JSON.stringify({
-                    action: "fetch_business_data",
-                    userId: userId,
-                    connectionId: connectionId,
-                  }),
-                });
-
-                if (response.ok) {
-                  const result = await response.json();
-                  console.log("Square data fetched successfully:", result);
-                } else {
-                  console.error(
-                    "Failed to fetch Square data:",
-                    await response.text()
-                  );
-                }
-              } catch (error) {
-                console.error("Error calling square-service:", error);
-                // Don't fail the connection process if data fetch fails
-              }
-
-              // Send success message to chat
-              await sendChatMessage(
-                supabaseClient,
-                userId,
-                `✅ **Square Connected Successfully!**\n\nGreat! I've successfully connected your Square account and fetched your business data. You can now:\n\n• Accept payments through your phone system\n• Access your Square data for customer insights\n• Sync transaction information\n• Use your menu items and business details in conversations\n\nYour Square integration is ready to use!`
-              );
-            }
-          } catch (error) {
-            console.error("Error storing connection:", error);
-            await sendChatMessage(
-              supabaseClient,
-              userId,
-              `❌ **Connection Error**\n\nWhile the Square authorization was successful, there was an issue saving your connection. Please try connecting again or contact support if the problem persists.`
-            );
-          }
-        } else {
-          // Send failure message to chat
-          await sendChatMessage(
-            supabaseClient,
-            userId,
-            `❌ **Square Connection Failed**\n\nThe Square authorization was not successful. ${
-              error ? `Error: ${error}` : "Please try connecting again."
-            }\n\nIf you continue to have issues, please contact support.`
-          );
-        }
-      }
+      // Process webhook using the shared service
+      await nangoService.processWebhook(webhookPayload);
 
       return createSuccessResponse({ received: true });
     }
@@ -246,55 +88,20 @@ Deno.serve(async (req: Request) => {
         }
 
         try {
-          // Get user info for the session
-          const { data: user } = await supabaseClient.auth.admin.getUserById(
-            userId
-          );
-
-          if (!user.user) {
-            return createErrorResponse("User not found", 404);
-          }
-
-          // Get integration info
-          const { data: integration } = await supabaseClient
-            .from("integrations")
-            .select("*")
-            .eq("id", integrationId)
-            .single();
-
-          if (!integration) {
-            return createErrorResponse("Integration not found", 404);
-          }
-
-          // Create session token with Nango
-          const sessionResponse = await nango.createConnectSession({
-            end_user: {
-              id: userId,
-              email: user.user.email || undefined,
-              display_name:
-                user.user.user_metadata?.full_name ||
-                user.user.email ||
-                undefined,
-            },
-            allowed_integrations: [integration.ext_integration_id],
+          // Create session token using the shared service
+          const sessionResponse = await nangoService.createConnectSession({
+            integrationId,
+            userId,
           });
 
-          return createSuccessResponse({
-            sessionToken: sessionResponse.data.token,
-            integration: {
-              id: integration.id,
-              name: integration.name,
-              description: integration.description,
-              ext_integration_id: integration.ext_integration_id,
-            },
-          });
+          return createSuccessResponse(sessionResponse);
         } catch (error) {
           console.error("Error creating session token:", error);
           return createErrorResponse(
             `Failed to create session token: ${
               error instanceof Error ? error.message : "Unknown error"
             }`,
-            500
+            500,
           );
         }
       }
@@ -303,21 +110,6 @@ Deno.serve(async (req: Request) => {
     return createErrorResponse("Invalid request", 400);
   } catch (error: unknown) {
     console.error("Error in nango-oauth function:", error);
-
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error occurred";
-    return new Response(
-      JSON.stringify({
-        error: "Internal server error",
-        details: errorMessage,
-      }),
-      {
-        status: 500,
-        headers: {
-          ...CORS_HEADERS,
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    return createInternalErrorResponse(error);
   }
 });

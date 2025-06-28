@@ -1,4 +1,4 @@
-import { Square, SquareClient, SquareEnvironment } from "npm:square@42.3.0";
+import { Square, SquareClient, SquareEnvironment } from "square";
 
 export interface SquareBusinessInfo {
   merchant?: {

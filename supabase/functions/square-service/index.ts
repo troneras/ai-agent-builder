@@ -14,110 +14,39 @@
 */
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import { Nango } from "@nangohq/node";
+import { NangoService } from "../_shared/nango-service.ts";
 import {
   SquareBusinessInfo,
   SquareService,
 } from "../_shared/square-service.ts";
-
-// Constants
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-} as const;
-
-// Test mode flag - set to true to use mock data
-const TEST_MODE = Deno.env.get("TEST_MODE") === "true";
+import {
+  createCorsResponse,
+  createErrorResponse,
+  createInternalErrorResponse,
+  createSuccessResponse,
+} from "../_shared/response-utils.ts";
 
 // Type definitions
-interface SquareBusinessData {
-  locations: Array<{
-    id: string;
-    name: string;
-    address?: {
-      address_line_1?: string;
-      address_line_2?: string;
-      locality?: string;
-      administrative_district_level_1?: string;
-      postal_code?: string;
-      country?: string;
-    };
-    phone_number?: string;
-    business_hours?: {
-      periods: Array<{
-        day_of_week: string;
-        start_local_time: string;
-        end_local_time: string;
-      }>;
-    };
-  }>;
-  items: Array<{
-    id: string;
-    name: string;
-    description?: string;
-    categories: Array<{
-      id: string;
-      name: string;
-    }>;
-    variations: Array<{
-      id: string;
-      name: string;
-      pricing_type: string;
-      price_money?: {
-        amount: number;
-        currency: string;
-      };
-    }>;
-  }>;
-  categories: Array<{
-    id: string;
-    name: string;
-  }>;
-}
-
 interface RequestBody {
-  action: "fetch_business_data" | "test_data";
+  action: "fetch_business_data";
   userId: string;
   connectionId?: string;
 }
 
-interface NangoCredentials {
-  access_token: string;
-}
-
 // Utility functions
-function createErrorResponse(message: string, status = 400): Response {
-  return new Response(JSON.stringify({ error: message }), {
-    status,
-    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-  });
-}
-
-function createSuccessResponse(data: unknown): Response {
-  return new Response(JSON.stringify(data), {
-    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-  });
-}
 
 // Helper to get Square service from Nango connection
 async function getSquareService(
-  nango: Nango,
+  nangoService: NangoService,
   connectionId: string,
 ): Promise<SquareService> {
   try {
-    const connection = await nango.getConnection(
+    const connectionInfo = await nangoService.getConnection(
       connectionId,
       "squareup-sandbox",
     );
 
-    if (!connection || !connection.credentials) {
-      throw new Error("No valid connection credentials found");
-    }
-
-    const credentials = connection.credentials as NangoCredentials;
-    return new SquareService(credentials.access_token, true); // true for sandbox
+    return new SquareService(connectionInfo.credentials.access_token, true); // true for sandbox
   } catch (error) {
     console.error("Error getting Square service:", error);
     throw new Error(
@@ -128,10 +57,10 @@ async function getSquareService(
   }
 }
 
-// Convert SquareBusinessInfo to our expected format
-function convertBusinessInfo(
+// Convert SquareBusinessInfo to database storage format
+function formatBusinessDataForStorage(
   businessInfo: SquareBusinessInfo,
-): SquareBusinessData {
+) {
   const locations = businessInfo.locations?.map((location) => ({
     id: location.id,
     name: location.name || "",
@@ -179,105 +108,18 @@ function convertBusinessInfo(
     locations,
     items,
     categories: [],
-  };
-}
-
-// Mock data for testing
-function getMockBusinessData(): SquareBusinessData {
-  return {
-    locations: [
-      {
-        id: "LOCATION_1",
-        name: "Test Restaurant",
-        address: {
-          address_line_1: "123 Test Street",
-          address_line_2: "Suite 100",
-          locality: "Test City",
-          administrative_district_level_1: "CA",
-          postal_code: "12345",
-          country: "US",
-        },
-        phone_number: "+1-555-123-4567",
-        business_hours: {
-          periods: [
-            {
-              day_of_week: "MONDAY",
-              start_local_time: "09:00",
-              end_local_time: "17:00",
-            },
-            {
-              day_of_week: "TUESDAY",
-              start_local_time: "09:00",
-              end_local_time: "17:00",
-            },
-          ],
-        },
-      },
-    ],
-    items: [
-      {
-        id: "ITEM_1",
-        name: "Margherita Pizza",
-        description: "Classic tomato and mozzarella pizza",
-        categories: [{ id: "CAT_1", name: "Pizza" }],
-        variations: [
-          {
-            id: "VAR_1",
-            name: "Regular",
-            pricing_type: "FIXED_PRICING",
-            price_money: {
-              amount: 1500,
-              currency: "USD",
-            },
-          },
-          {
-            id: "VAR_2",
-            name: "Large",
-            pricing_type: "FIXED_PRICING",
-            price_money: {
-              amount: 2000,
-              currency: "USD",
-            },
-          },
-        ],
-      },
-      {
-        id: "ITEM_2",
-        name: "Caesar Salad",
-        description: "Fresh romaine lettuce with Caesar dressing",
-        categories: [{ id: "CAT_2", name: "Salads" }],
-        variations: [
-          {
-            id: "VAR_3",
-            name: "Regular",
-            pricing_type: "FIXED_PRICING",
-            price_money: {
-              amount: 1200,
-              currency: "USD",
-            },
-          },
-        ],
-      },
-    ],
-    categories: [
-      { id: "CAT_1", name: "Pizza" },
-      { id: "CAT_2", name: "Salads" },
-    ],
+    merchant: businessInfo.merchant,
+    catalog: businessInfo.catalog,
   };
 }
 
 // Helper to fetch business data using SquareService
 async function fetchSquareBusinessData(
   squareService: SquareService,
-): Promise<SquareBusinessData> {
+): Promise<SquareBusinessInfo> {
   try {
-    if (TEST_MODE) {
-      console.log("🧪 Running in TEST_MODE - using mock Square data");
-      return getMockBusinessData();
-    }
-
     const businessInfo = await squareService.getBusinessInformation();
-    return convertBusinessInfo(businessInfo);
+    return businessInfo;
   } catch (error) {
     console.error("Error fetching Square business data:", error);
     throw new Error(
@@ -292,19 +134,21 @@ async function fetchSquareBusinessData(
 async function storeBusinessData(
   supabaseClient: SupabaseClient,
   userId: string,
-  businessData: SquareBusinessData,
+  businessInfo: SquareBusinessInfo,
 ): Promise<void> {
   try {
+    const formattedData = formatBusinessDataForStorage(businessInfo);
+
     // Store locations
-    if (businessData.locations.length > 0) {
-      const primaryLocation = businessData.locations[0];
+    if (formattedData.locations.length > 0) {
+      const primaryLocation = formattedData.locations[0];
 
       if (primaryLocation) {
         await supabaseClient
           .from("user_profiles")
           .update({
             business_data: {
-              ...businessData,
+              ...formattedData,
               primary_location: {
                 id: primaryLocation.id,
                 name: primaryLocation.name,
@@ -313,9 +157,9 @@ async function storeBusinessData(
                 business_hours: primaryLocation.business_hours,
               },
               square_data: {
-                locations: businessData.locations,
-                items: businessData.items,
-                categories: businessData.categories,
+                locations: formattedData.locations,
+                items: formattedData.items,
+                categories: formattedData.categories,
                 last_sync: new Date().toISOString(),
               },
             },
@@ -339,7 +183,7 @@ async function storeBusinessData(
 Deno.serve(async (req: Request) => {
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: CORS_HEADERS });
+    return createCorsResponse();
   }
 
   try {
@@ -354,7 +198,11 @@ Deno.serve(async (req: Request) => {
 
     // Initialize clients
     const supabaseClient = createClient(supabaseUrl, supabaseKey);
-    const nango = new Nango({ secretKey: nangoSecretKey });
+    const nangoService = new NangoService(
+      nangoSecretKey,
+      supabaseUrl,
+      supabaseKey,
+    );
 
     // Parse and validate request body
     let body: RequestBody;
@@ -375,7 +223,7 @@ Deno.serve(async (req: Request) => {
         // Get the user's Square connection
         let connectionIdToUse = connectionId;
 
-        if (!connectionIdToUse && !TEST_MODE) {
+        if (!connectionIdToUse) {
           const { data: connection } = await supabaseClient
             .from("connections")
             .select("connection_id")
@@ -393,40 +241,43 @@ Deno.serve(async (req: Request) => {
           connectionIdToUse = connection.connection_id;
         }
 
-        // Get Square service (or use mock in test mode)
-        let squareService: SquareService;
-        if (TEST_MODE) {
-          squareService = new SquareService("test-token", true);
-        } else {
-          squareService = await getSquareService(nango, connectionIdToUse!);
+        // Ensure we have a valid connection ID
+        if (!connectionIdToUse) {
+          return createErrorResponse(
+            "No valid connection ID available",
+            400,
+          );
         }
+
+        // Get Square service
+        const squareService = await getSquareService(
+          nangoService,
+          connectionIdToUse,
+        );
 
         // Fetch business data
-        const businessData = await fetchSquareBusinessData(squareService);
+        const businessInfo = await fetchSquareBusinessData(squareService);
 
         // Store the data
-        await storeBusinessData(supabaseClient, userId, businessData);
+        await storeBusinessData(supabaseClient, userId, businessInfo);
 
-        // Update connection last sync time (skip in test mode)
-        if (!TEST_MODE && connectionIdToUse) {
-          await supabaseClient
-            .from("connections")
-            .update({
-              last_sync_at: new Date().toISOString(),
-            })
-            .eq("connection_id", connectionIdToUse);
-        }
+        // Update connection last sync time
+        await supabaseClient
+          .from("connections")
+          .update({
+            last_sync_at: new Date().toISOString(),
+          })
+          .eq("connection_id", connectionIdToUse);
+
+        const formattedData = formatBusinessDataForStorage(businessInfo);
 
         return createSuccessResponse({
           success: true,
-          message: TEST_MODE
-            ? "Test data fetched and stored successfully"
-            : "Business data fetched and stored successfully",
-          test_mode: TEST_MODE,
+          message: "Business data fetched and stored successfully",
           data: {
-            locations_count: businessData.locations.length,
-            items_count: businessData.items.length,
-            categories_count: businessData.categories.length,
+            locations_count: formattedData.locations.length,
+            items_count: formattedData.items.length,
+            categories_count: formattedData.categories.length,
           },
         });
       } catch (error) {
@@ -440,45 +291,9 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    if (action === "test_data") {
-      // Test endpoint that returns mock data without storing
-      try {
-        const mockService = new SquareService("test-token", true);
-        const businessData = await fetchSquareBusinessData(mockService);
-
-        return createSuccessResponse({
-          success: true,
-          message: "Test data generated successfully",
-          test_mode: true,
-          data: businessData,
-        });
-      } catch (error) {
-        console.error("Error in test_data:", error);
-        return createErrorResponse(
-          `Failed to generate test data: ${
-            error instanceof Error ? error.message : "Unknown error"
-          }`,
-          500,
-        );
-      }
-    }
-
     return createErrorResponse("Invalid action");
   } catch (error: unknown) {
     console.error("Error in square-service function:", error);
-
-    const errorMessage = error instanceof Error
-      ? error.message
-      : "Unknown error occurred";
-    return new Response(
-      JSON.stringify({
-        error: "Internal server error",
-        details: errorMessage,
-      }),
-      {
-        status: 500,
-        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-      },
-    );
+    return createInternalErrorResponse(error);
   }
 });
