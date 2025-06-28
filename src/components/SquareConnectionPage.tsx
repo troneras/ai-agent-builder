@@ -81,7 +81,32 @@ const SquareConnectionPage: React.FC<SquareConnectionPageProps> = ({
           console.log('Nango event:', event);
 
           if (event.type === 'close') {
-            setIsConnecting(false);
+            // When popup closes, check if connection was actually established
+            // If not, it might be due to webhook not reaching our server
+            setTimeout(async () => {
+              try {
+                // Check if connection was created
+                const { data: connection } = await supabase
+                  .from('connections')
+                  .select('connection_id, status')
+                  .eq('user_id', user.id)
+                  .eq('status', 'active')
+                  .single();
+
+                if (connection) {
+                  // Connection was established, proceed
+                  onConnected();
+                } else {
+                  // No connection found, show error
+                  setConnectionError('Connection was not completed. This can happen if our servers are busy. Please try again or contact support if the issue persists.');
+                }
+              } catch (error) {
+                console.error('Error checking connection status:', error);
+                // No connection found, show error
+                setConnectionError('Connection was not completed. This can happen if our servers are busy. Please try again or contact support if the issue persists.');
+              }
+              setIsConnecting(false);
+            }, 2000); // Wait 2 seconds for webhook to process
           } else if (event.type === 'connect') {
             setIsConnecting(false);
             onConnected();
@@ -240,8 +265,25 @@ const SquareConnectionPage: React.FC<SquareConnectionPageProps> = ({
 
           {/* Error Message */}
           {connectionError && (
-            <div className="bg-red-500/20 border border-red-500/30 rounded-xl p-4 mb-8 max-w-md mx-auto">
-              <p className="text-red-100 text-sm">{connectionError}</p>
+            <div className="bg-red-500/20 border border-red-500/30 rounded-xl p-4 mb-8 max-w-lg mx-auto">
+              <p className="text-red-100 text-sm mb-3">{connectionError}</p>
+              <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                <button
+                  onClick={() => {
+                    setConnectionError(null);
+                    handleConnectSquare();
+                  }}
+                  className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Try Again
+                </button>
+                <a
+                  href="mailto:support@cutcall.com?subject=Square Connection Issue"
+                  className="bg-red-500/50 hover:bg-red-500/70 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors text-center"
+                >
+                  Contact Support
+                </a>
+              </div>
             </div>
           )}
         </div>

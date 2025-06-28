@@ -314,6 +314,8 @@ class ImportProcessor {
       has_catalog: services.length > 0,
       catalog_items_count: catalogInfo?.items?.length || 0,
       catalog_services_count: catalogInfo?.services?.length || 0,
+      catalog_categories_count: catalogInfo?.categories?.length || 0,
+      enhanced_catalog_data: catalogInfo, // Store the full enhanced catalog data
     };
   }
 
@@ -330,6 +332,9 @@ class ImportProcessor {
         case "merchant":
           if (data.business_name) {
             updates.business_name = data.business_name;
+          }
+          if (data.merchant_id) {
+            updates.merchant_id = data.merchant_id;
           }
           break;
         case "locations":
@@ -353,7 +358,15 @@ class ImportProcessor {
           }
           break;
         case "catalog":
-          if (data.services && data.services.length > 0) {
+          // Store the enhanced catalog data which includes detailed information about
+          // items, services, categories, and variations
+          if (data.enhanced_catalog_data) {
+            // Extract services array for the services field (text array)
+            updates.services = data.services || [];
+            // Store the full enhanced catalog data in the catalog_data field (jsonb)
+            updates.catalog_data = data.enhanced_catalog_data;
+          } // Fallback to simple services list if enhanced data is not available
+          else if (data.services && data.services.length > 0) {
             updates.services = data.services;
           }
           break;

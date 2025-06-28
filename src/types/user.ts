@@ -36,7 +36,7 @@ export interface Onboarding {
   current_step: number;
 
   // Business information
-  user_name?: string;
+  merchant_id?: string;
   business_name?: string;
   business_type?: string;
   business_city?: string;

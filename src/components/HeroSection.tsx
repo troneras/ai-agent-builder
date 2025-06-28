@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MessageCircle, Sparkles, ArrowRight, Play, CreditCard, CheckCircle } from 'lucide-react';
+import { MessageCircle, ArrowRight, Play } from 'lucide-react';
 import Logo from './Logo';
 
 interface HeroSectionProps {
@@ -40,7 +40,7 @@ const HeroSection: React.FC<HeroSectionProps> = ({ onStartBuilding }) => {
         await new Promise(resolve => setTimeout(resolve, 1000));
         setShowTyping(false);
       }
-      
+
       setDemoMessages(prev => {
         // Check if message already exists to prevent duplicates
         const messageExists = prev.some(msg => msg.id === conversation[i].id);
@@ -53,11 +53,11 @@ const HeroSection: React.FC<HeroSectionProps> = ({ onStartBuilding }) => {
 
   const handleDemoClick = () => {
     // For now, just scroll to testimonials where they can hear more examples
-    const element = document.querySelector('#testimonials');
+    const element = document.querySelector('#testimonials') as HTMLElement;
     if (element) {
       const headerHeight = 80;
       const elementPosition = element.offsetTop - headerHeight;
-      
+
       window.scrollTo({
         top: elementPosition,
         behavior: 'smooth'
@@ -70,104 +70,47 @@ const HeroSection: React.FC<HeroSectionProps> = ({ onStartBuilding }) => {
       <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-12 items-center">
         {/* Content */}
         <div className={`text-center lg:text-left transition-all duration-1000 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
-          {/* Square Integration Badge */}
-          <div className="inline-flex items-center gap-3 bg-white/15 backdrop-blur-md text-white px-6 py-3 rounded-full text-sm font-medium mb-6 border border-white/20" role="status" aria-label="Square integration">
-            <CreditCard className="w-5 h-5" aria-hidden="true" />
-            <span className="drop-shadow-sm" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>
-              Works with Square account for instant setup
-            </span>
-          </div>
-          
           <h1 className="text-5xl lg:text-7xl font-bold text-white mb-6 leading-tight">
             Never Miss Another
-            <span className="block text-white drop-shadow-lg" style={{ 
-              textShadow: '2px 2px 4px rgba(0,0,0,0.5), 0 0 20px rgba(255,255,255,0.3)' 
+            <span className="block text-white drop-shadow-lg" style={{
+              textShadow: '2px 2px 4px rgba(0,0,0,0.5), 0 0 20px rgba(255,255,255,0.3)'
             }}>
               Customer Call
             </span>
-            <span className="block text-white drop-shadow-lg" style={{ 
-              textShadow: '2px 2px 4px rgba(0,0,0,0.5)' 
+            <span className="block text-white drop-shadow-lg" style={{
+              textShadow: '2px 2px 4px rgba(0,0,0,0.5)'
             }}>
               Again
             </span>
           </h1>
-          
-          <p className="text-xl lg:text-2xl text-white mb-6 leading-relaxed drop-shadow-md" style={{ 
-            textShadow: '1px 1px 2px rgba(0,0,0,0.7)' 
+
+          <p className="text-xl lg:text-2xl text-white mb-8 leading-relaxed drop-shadow-md" style={{
+            textShadow: '1px 1px 2px rgba(0,0,0,0.7)'
           }}>
-            Your phone assistant answers calls, schedules appointments, and helps customers
+            Your AI phone assistant answers calls, schedules appointments, and helps customers
             even when you're busy or closed.
           </p>
 
-          {/* Square Benefits */}
-          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 mb-8 border border-white/20">
-            <div className="flex items-center gap-3 mb-4">
-              <CreditCard className="w-6 h-6 text-white" />
-              <h3 className="text-white font-semibold text-lg drop-shadow-sm" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>
-                Powered by Square Integration
-              </h3>
-            </div>
-            <div className="grid md:grid-cols-2 gap-4 text-white/90">
-              <div className="flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
-                <span className="text-sm drop-shadow-sm" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>
-                  Import business info instantly
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
-                <span className="text-sm drop-shadow-sm" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>
-                  Accept payments over phone
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
-                <span className="text-sm drop-shadow-sm" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>
-                  Sync appointments & bookings
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
-                <span className="text-sm drop-shadow-sm" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>
-                  Setup in under 2 minutes
-                </span>
-              </div>
-            </div>
-            <div className="mt-4 pt-4 border-t border-white/20">
-              <p className="text-white/80 text-sm drop-shadow-sm" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>
-                <strong>Don't have Square?</strong> We'll help you create one for free - it takes just 2 minutes!
-              </p>
-            </div>
-          </div>
-
-          {/* Use cases */}
-          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 mb-8 border border-white/20">
-            <p className="text-white/90 text-lg mb-4 drop-shadow-sm" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>
-              🔧 Perfect for salons, clinics, garages, contractors, and any business where answering the phone interrupts your work.
-            </p>
-          </div>
-          
-          <div className="flex flex-col sm:flex-row gap-4 mb-12">
+          <div className="flex flex-col sm:flex-row gap-4 mb-8">
             <button
               onClick={onStartBuilding}
               className="bg-white text-purple-600 px-8 py-4 rounded-xl font-semibold text-lg hover:bg-gray-50 transition-all duration-300 flex items-center justify-center gap-2 shadow-xl hover:shadow-2xl hover:scale-105 focus:outline-none focus:ring-4 focus:ring-white/50"
-              aria-label="Connect with Square & Start"
+              aria-label="Start building your phone assistant"
             >
-              <CreditCard className="w-5 h-5" aria-hidden="true" />
-              Connect with Square & Start
+              Start Building
               <ArrowRight className="w-5 h-5" aria-hidden="true" />
             </button>
-            <button 
+            <button
               onClick={handleDemoClick}
               className="glass-morphism text-white px-8 py-4 rounded-xl font-semibold text-lg hover:bg-white/20 transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-white/30 flex items-center justify-center gap-2"
               aria-label="Hear what your assistant sounds like"
             >
               <Play className="w-5 h-5" aria-hidden="true" />
-              Hear What It Sounds Like
+              Hear Demo
             </button>
           </div>
-          
-          <div className="flex items-center gap-8 text-white/90" role="list" aria-label="Key benefits">
+
+          <div className="flex items-center justify-center lg:justify-start gap-8 text-white/90" role="list" aria-label="Key benefits">
             <div className="flex items-center gap-2" role="listitem">
               <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" aria-hidden="true"></div>
               <span className="drop-shadow-sm" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>No Monthly Fees</span>
@@ -196,7 +139,7 @@ const HeroSection: React.FC<HeroSectionProps> = ({ onStartBuilding }) => {
                 <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" title="Online"></div>
               </div>
             </div>
-            
+
             <div className="space-y-4 h-80 overflow-y-auto" role="log" aria-label="Conversation messages" aria-live="polite">
               {demoMessages.map((message) => (
                 <div
@@ -204,11 +147,10 @@ const HeroSection: React.FC<HeroSectionProps> = ({ onStartBuilding }) => {
                   className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in-up`}
                 >
                   <div
-                    className={`max-w-xs px-4 py-2 rounded-2xl ${
-                      message.type === 'user'
-                        ? 'bg-purple-500 text-white'
-                        : 'bg-white/20 text-white backdrop-blur-sm'
-                    }`}
+                    className={`max-w-xs px-4 py-2 rounded-2xl ${message.type === 'user'
+                      ? 'bg-purple-500 text-white'
+                      : 'bg-white/20 text-white backdrop-blur-sm'
+                      }`}
                     role={message.type === 'user' ? 'note' : 'status'}
                     aria-label={`${message.type === 'user' ? 'Customer' : 'Assistant'} message`}
                   >
@@ -216,7 +158,7 @@ const HeroSection: React.FC<HeroSectionProps> = ({ onStartBuilding }) => {
                   </div>
                 </div>
               ))}
-              
+
               {showTyping && (
                 <div className="flex justify-start">
                   <div className="bg-white/20 backdrop-blur-sm px-4 py-2 rounded-2xl" aria-label="Assistant is typing">
@@ -230,7 +172,7 @@ const HeroSection: React.FC<HeroSectionProps> = ({ onStartBuilding }) => {
                 </div>
               )}
             </div>
-            
+
             <div className="mt-4 pt-4 border-t border-white/20">
               <div className="flex items-center gap-2 bg-white/10 rounded-xl px-4 py-3">
                 <MessageCircle className="w-4 h-4 text-white/60" aria-hidden="true" />

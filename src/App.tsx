@@ -11,13 +11,14 @@ import OnboardingChat from './components/OnboardingChat';
 import Dashboard from './components/Dashboard';
 import SquareConnectionPage from './components/SquareConnectionPage';
 import BusinessImportScreen from './components/BusinessImportScreen';
+import BusinessInfoScreen from './components/BusinessInfoScreen';
 import ParticleBackground from './components/ParticleBackground';
 import { useAuth } from './hooks/useAuth';
 import { useUserProfile } from './hooks/useUserProfile';
 import { useOnboarding } from './hooks/useOnboarding';
 import { authHelpers, supabase } from './lib/supabase';
 
-type AppView = 'landing' | 'dashboard' | 'square-connection' | 'business-import' | 'onboarding';
+type AppView = 'landing' | 'dashboard' | 'square-connection' | 'business-import' | 'business-info' | 'onboarding';
 
 function App() {
   const [showAuth, setShowAuth] = useState(false);
@@ -79,18 +80,24 @@ function App() {
             // Still importing - show import screen
             setCurrentView('business-import');
           } else if (allCompleted) {
-            // Import completed - check if onboarding is done
+            // Import completed - check if onboarding has started
             const hasStartedOnboarding = onboarding && (
-              onboarding.user_name ||
+              onboarding.merchant_id ||
               onboarding.business_name ||
               onboarding.business_type ||
-              onboarding.current_step > 1
+              onboarding.current_step > 1 ||
+              (onboarding.services && onboarding.services.length > 0)
             );
 
-            if (hasStartedOnboarding) {
+            if (hasStartedOnboarding && !onboarding.completed) {
+              // Import done and onboarding started but not completed - go to onboarding
               setCurrentView('onboarding');
+            } else if (hasStartedOnboarding && onboarding.completed) {
+              // Everything completed - go to dashboard
+              setCurrentView('dashboard');
             } else {
-              setCurrentView('onboarding'); // Start onboarding after import
+              // Import completed but onboarding not started - show business info
+              setCurrentView('business-info');
             }
           } else {
             // Some imports failed or mixed states - show import screen
@@ -140,14 +147,46 @@ function App() {
     setShowAuth(false);
   };
 
-  const handleSquareConnected = () => {
-    // When Square is connected, we need to get the connection ID and go to import screen
-    checkSquareConnection();
+  const handleSquareConnected = async () => {
+    // When Square is connected, get the connection ID and go directly to import screen
+    if (!user) return;
+
+    try {
+      // Get the newly created Square connection
+      const { data: connection } = await supabase
+        .from('connections')
+        .select('connection_id')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .single();
+
+      if (connection) {
+        setSquareConnectionId(connection.connection_id);
+        setCurrentView('business-import');
+      } else {
+        // If connection not found, fall back to checking connection status
+        checkSquareConnection();
+      }
+    } catch (error) {
+      console.error('Error getting Square connection:', error);
+      // Fall back to checking connection status
+      checkSquareConnection();
+    }
   };
 
   const handleBusinessImportComplete = () => {
-    // When business import is completed, move to onboarding chat
+    // When business import is completed, show business info screen
+    setCurrentView('business-info');
+  };
+
+  const handleBusinessInfoContinue = () => {
+    // When user continues from business info, move to onboarding chat
     setCurrentView('onboarding');
+  };
+
+  const handleBusinessInfoReimport = () => {
+    // When user wants to reimport, go back to import screen
+    setCurrentView('business-import');
   };
 
   const handleOnboardingComplete = () => {
@@ -198,13 +237,23 @@ function App() {
     );
   }
 
-  if (currentView === 'onboarding') {
+  if (currentView === 'business-info' || currentView === 'onboarding') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600">
-        <OnboardingChat onComplete={handleOnboardingComplete} onSignOut={handleSignOut} />
-      </div>
+      <BusinessInfoScreen
+        onContinue={handleBusinessInfoContinue}
+        onSignOut={handleSignOut}
+        onReimport={handleBusinessInfoReimport}
+      />
     );
   }
+
+  // if (currentView === 'onboarding') {
+  //   return (
+  //     <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600">
+  //       <OnboardingChat onComplete={handleOnboardingComplete} onSignOut={handleSignOut} />
+  //     </div>
+  //   );
+  // }
 
   // Landing page view
   return (
