@@ -15,7 +15,10 @@
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { Nango } from "@nangohq/node";
-import { Square, SquareClient, SquareEnvironment } from "square";
+import {
+  SquareBusinessInfo,
+  SquareService,
+} from "../_shared/square-service.ts";
 
 // Constants
 const CORS_HEADERS = {
@@ -27,113 +30,6 @@ const CORS_HEADERS = {
 
 // Test mode flag - set to true to use mock data
 const TEST_MODE = Deno.env.get("TEST_MODE") === "true";
-
-// Mock Square data for testing
-const MOCK_SQUARE_DATA = {
-  locations: [
-    {
-      id: "LOCATION_1",
-      name: "Test Restaurant",
-      address: {
-        addressLine1: "123 Test Street",
-        addressLine2: "Suite 100",
-        locality: "Test City",
-        administrativeDistrictLevel1: "CA",
-        postalCode: "12345",
-        country: "US",
-      },
-      phoneNumber: "+1-555-123-4567",
-      businessHours: {
-        periods: [
-          {
-            dayOfWeek: "MONDAY",
-            startLocalTime: "09:00",
-            endLocalTime: "17:00",
-          },
-          {
-            dayOfWeek: "TUESDAY",
-            startLocalTime: "09:00",
-            endLocalTime: "17:00",
-          },
-        ],
-      },
-    },
-  ],
-  catalogObjects: [
-    {
-      id: "ITEM_1",
-      type: "ITEM",
-      itemData: {
-        name: "Margherita Pizza",
-        descriptionHtml: "<p>Classic tomato and mozzarella pizza</p>",
-        categories: [{ categoryId: "CAT_1" }],
-        variations: [
-          {
-            id: "VAR_1",
-            type: "ITEM_VARIATION",
-            itemVariationData: {
-              name: "Regular",
-              pricingType: "FIXED_PRICING",
-              priceMoney: {
-                amount: 1500,
-                currency: "USD",
-              },
-            },
-          },
-          {
-            id: "VAR_2",
-            type: "ITEM_VARIATION",
-            itemVariationData: {
-              name: "Large",
-              pricingType: "FIXED_PRICING",
-              priceMoney: {
-                amount: 2000,
-                currency: "USD",
-              },
-            },
-          },
-        ],
-      },
-    },
-    {
-      id: "ITEM_2",
-      type: "ITEM",
-      itemData: {
-        name: "Caesar Salad",
-        descriptionHtml: "<p>Fresh romaine lettuce with Caesar dressing</p>",
-        categories: [{ categoryId: "CAT_2" }],
-        variations: [
-          {
-            id: "VAR_3",
-            type: "ITEM_VARIATION",
-            itemVariationData: {
-              name: "Regular",
-              pricingType: "FIXED_PRICING",
-              priceMoney: {
-                amount: 1200,
-                currency: "USD",
-              },
-            },
-          },
-        ],
-      },
-    },
-    {
-      id: "CAT_1",
-      type: "CATEGORY",
-      categoryData: {
-        name: "Pizza",
-      },
-    },
-    {
-      id: "CAT_2",
-      type: "CATEGORY",
-      categoryData: {
-        name: "Salads",
-      },
-    },
-  ],
-};
 
 // Type definitions
 interface SquareBusinessData {
@@ -161,10 +57,10 @@ interface SquareBusinessData {
     id: string;
     name: string;
     description?: string;
-    category?: {
+    categories: Array<{
       id: string;
       name: string;
-    };
+    }>;
     variations: Array<{
       id: string;
       name: string;
@@ -187,6 +83,10 @@ interface RequestBody {
   connectionId?: string;
 }
 
+interface NangoCredentials {
+  access_token: string;
+}
+
 // Utility functions
 function createErrorResponse(message: string, status = 400): Response {
   return new Response(JSON.stringify({ error: message }), {
@@ -201,168 +101,189 @@ function createSuccessResponse(data: unknown): Response {
   });
 }
 
-// Helper to get Square client from Nango connection
-async function getSquareClient(
+// Helper to get Square service from Nango connection
+async function getSquareService(
   nango: Nango,
-  connectionId: string
-): Promise<SquareClient> {
+  connectionId: string,
+): Promise<SquareService> {
   try {
-    // Get the connection details from Nango
     const connection = await nango.getConnection(
       connectionId,
-      "squareup-sandbox"
+      "squareup-sandbox",
     );
 
     if (!connection || !connection.credentials) {
       throw new Error("No valid connection credentials found");
     }
 
-    // Create Square client with the access token
-    const client = new SquareClient({
-      token: (connection.credentials as any).access_token,
-      environment: SquareEnvironment.Sandbox, // Change to Production for live
-    });
-
-    return client;
+    const credentials = connection.credentials as NangoCredentials;
+    return new SquareService(credentials.access_token, true); // true for sandbox
   } catch (error) {
-    console.error("Error getting Square client:", error);
+    console.error("Error getting Square service:", error);
     throw new Error(
-      `Failed to get Square client: ${
+      `Failed to get Square service: ${
         error instanceof Error ? error.message : "Unknown error"
-      }`
+      }`,
     );
   }
 }
 
-// --- Type Guards for Square CatalogObject ---
-function isCatalogItem(
-  obj: Square.CatalogObject
-): obj is Square.CatalogObject & { itemData: Square.CatalogItem } {
-  return obj.type === "ITEM" && !!obj.itemData;
-}
-function isCatalogCategory(
-  obj: Square.CatalogObject
-): obj is Square.CatalogObject & { categoryData: Square.CatalogCategory } {
-  return obj.type === "CATEGORY" && !!obj.categoryData;
-}
-function isCatalogItemVariation(
-  obj: Square.CatalogObject
-): obj is Square.CatalogObject & {
-  itemVariationData: Square.CatalogItemVariation;
-} {
-  return obj.type === "ITEM_VARIATION" && !!obj.itemVariationData;
+// Convert SquareBusinessInfo to our expected format
+function convertBusinessInfo(
+  businessInfo: SquareBusinessInfo,
+): SquareBusinessData {
+  const locations = businessInfo.locations?.map((location) => ({
+    id: location.id,
+    name: location.name || "",
+    address: location.address
+      ? {
+        address_line_1: location.address.addressLine1,
+        address_line_2: location.address.addressLine2,
+        locality: location.address.locality,
+        administrative_district_level_1:
+          location.address.administrativeDistrictLevel1,
+        postal_code: location.address.postalCode,
+        country: location.address.country,
+      }
+      : undefined,
+    phone_number: location.phoneNumber,
+    business_hours: location.businessHours?.periods
+      ? {
+        periods: location.businessHours.periods.map((period) => ({
+          day_of_week: period.dayOfWeek,
+          start_local_time: period.startLocalTime || "",
+          end_local_time: period.endLocalTime || "",
+        })),
+      }
+      : undefined,
+  })) || [];
+
+  // Extract services from catalog
+  const services = SquareService.extractServices(businessInfo.catalog);
+
+  // Convert services to items format (simplified)
+  const items = services.map((serviceName, index) => ({
+    id: `service_${index}`,
+    name: serviceName,
+    description: undefined,
+    categories: [],
+    variations: [{
+      id: `var_${index}`,
+      name: "Standard",
+      pricing_type: "FIXED_PRICING",
+      price_money: undefined,
+    }],
+  }));
+
+  return {
+    locations,
+    items,
+    categories: [],
+  };
 }
 
-// Helper to fetch business data from Square
+// Mock data for testing
+function getMockBusinessData(): SquareBusinessData {
+  return {
+    locations: [
+      {
+        id: "LOCATION_1",
+        name: "Test Restaurant",
+        address: {
+          address_line_1: "123 Test Street",
+          address_line_2: "Suite 100",
+          locality: "Test City",
+          administrative_district_level_1: "CA",
+          postal_code: "12345",
+          country: "US",
+        },
+        phone_number: "+1-555-123-4567",
+        business_hours: {
+          periods: [
+            {
+              day_of_week: "MONDAY",
+              start_local_time: "09:00",
+              end_local_time: "17:00",
+            },
+            {
+              day_of_week: "TUESDAY",
+              start_local_time: "09:00",
+              end_local_time: "17:00",
+            },
+          ],
+        },
+      },
+    ],
+    items: [
+      {
+        id: "ITEM_1",
+        name: "Margherita Pizza",
+        description: "Classic tomato and mozzarella pizza",
+        categories: [{ id: "CAT_1", name: "Pizza" }],
+        variations: [
+          {
+            id: "VAR_1",
+            name: "Regular",
+            pricing_type: "FIXED_PRICING",
+            price_money: {
+              amount: 1500,
+              currency: "USD",
+            },
+          },
+          {
+            id: "VAR_2",
+            name: "Large",
+            pricing_type: "FIXED_PRICING",
+            price_money: {
+              amount: 2000,
+              currency: "USD",
+            },
+          },
+        ],
+      },
+      {
+        id: "ITEM_2",
+        name: "Caesar Salad",
+        description: "Fresh romaine lettuce with Caesar dressing",
+        categories: [{ id: "CAT_2", name: "Salads" }],
+        variations: [
+          {
+            id: "VAR_3",
+            name: "Regular",
+            pricing_type: "FIXED_PRICING",
+            price_money: {
+              amount: 1200,
+              currency: "USD",
+            },
+          },
+        ],
+      },
+    ],
+    categories: [
+      { id: "CAT_1", name: "Pizza" },
+      { id: "CAT_2", name: "Salads" },
+    ],
+  };
+}
+
+// Helper to fetch business data using SquareService
 async function fetchSquareBusinessData(
-  squareClient: SquareClient
+  squareService: SquareService,
 ): Promise<SquareBusinessData> {
   try {
-    let locations: any[] = [];
-    let catalogObjects: Square.CatalogObject[] = [];
-
     if (TEST_MODE) {
       console.log("🧪 Running in TEST_MODE - using mock Square data");
-      locations = MOCK_SQUARE_DATA.locations;
-      catalogObjects =
-        MOCK_SQUARE_DATA.catalogObjects as Square.CatalogObject[];
-    } else {
-      // Fetch locations
-      const locationsResponse = await squareClient.locations.list();
-      locations = locationsResponse.locations || [];
-
-      // Fetch catalog objects
-      const catalogResponse = await squareClient.catalog.list({
-        types: "ITEM,CATEGORY,ITEM_VARIATION",
-      });
-      catalogObjects = catalogResponse.data || [];
+      return getMockBusinessData();
     }
 
-    // Filter items and categories
-    const items = catalogObjects.filter(isCatalogItem);
-    const categories = catalogObjects.filter(isCatalogCategory);
-
-    console.log(
-      `📊 Processing ${items.length} items and ${categories.length} categories`
-    );
-
-    return {
-      locations: locations.map((location) => ({
-        id: location.id!,
-        name: location.name!,
-        address: location.address
-          ? {
-              address_line_1: location.address.addressLine1 || undefined,
-              address_line_2: location.address.addressLine2 || undefined,
-              locality: location.address.locality || undefined,
-              administrative_district_level_1:
-                location.address.administrativeDistrictLevel1 || undefined,
-              postal_code: location.address.postalCode || undefined,
-              country: location.address.country || undefined,
-            }
-          : undefined,
-        phone_number: location.phoneNumber || undefined,
-        business_hours: location.businessHours?.periods
-          ? {
-              periods: location.businessHours.periods.map(
-                (period: {
-                  dayOfWeek: string;
-                  startLocalTime: string;
-                  endLocalTime: string;
-                }) => ({
-                  day_of_week: period.dayOfWeek!,
-                  start_local_time: period.startLocalTime!,
-                  end_local_time: period.endLocalTime!,
-                })
-              ),
-            }
-          : undefined,
-      })),
-      items: items.map((item) => ({
-        id: item.id!,
-        name: item.itemData.name ?? "",
-        description: item.itemData.descriptionHtml ?? undefined,
-        categories:
-          item.itemData.categories?.map((cat: any) => ({
-            id: cat.categoryId,
-            name:
-              categories.find((c) => c.id === cat.categoryId)?.categoryData
-                ?.name ?? "Unknown",
-          })) ?? [],
-        variations: (item.itemData.variations ?? [])
-          .filter(isCatalogItemVariation)
-          .map(
-            (
-              variation: Square.CatalogObject & {
-                itemVariationData: Square.CatalogItemVariation;
-              }
-            ) => ({
-              id: variation.id!,
-              name: variation.itemVariationData.name ?? "",
-              pricing_type: variation.itemVariationData.pricingType ?? "",
-              price_money: variation.itemVariationData.priceMoney
-                ? {
-                    amount: Number(
-                      variation.itemVariationData.priceMoney.amount
-                    ),
-                    currency:
-                      variation.itemVariationData.priceMoney.currency ?? "",
-                  }
-                : undefined,
-            })
-          ),
-      })),
-      categories: categories.map((category) => ({
-        id: category.id!,
-        name: category.categoryData.name ?? "",
-      })),
-    };
+    const businessInfo = await squareService.getBusinessInformation();
+    return convertBusinessInfo(businessInfo);
   } catch (error) {
     console.error("Error fetching Square business data:", error);
     throw new Error(
       `Failed to fetch Square data: ${
         error instanceof Error ? error.message : "Unknown error"
-      }`
+      }`,
     );
   }
 }
@@ -371,7 +292,7 @@ async function fetchSquareBusinessData(
 async function storeBusinessData(
   supabaseClient: SupabaseClient,
   userId: string,
-  businessData: SquareBusinessData
+  businessData: SquareBusinessData,
 ): Promise<void> {
   try {
     // Store locations
@@ -403,16 +324,13 @@ async function storeBusinessData(
       }
     }
 
-    // Store items in a separate table if needed
-    // This could be expanded to store items, categories, etc. in dedicated tables
-
     console.log("Business data stored successfully");
   } catch (error) {
     console.error("Error storing business data:", error);
     throw new Error(
       `Failed to store business data: ${
         error instanceof Error ? error.message : "Unknown error"
-      }`
+      }`,
     );
   }
 }
@@ -468,27 +386,23 @@ Deno.serve(async (req: Request) => {
           if (!connection) {
             return createErrorResponse(
               "No active Square connection found for user",
-              404
+              404,
             );
           }
 
           connectionIdToUse = connection.connection_id;
         }
 
-        // Get Square client (or use mock in test mode)
-        let squareClient: SquareClient;
+        // Get Square service (or use mock in test mode)
+        let squareService: SquareService;
         if (TEST_MODE) {
-          // Create a mock client for testing
-          squareClient = new SquareClient({
-            token: "test-token",
-            environment: SquareEnvironment.Sandbox,
-          });
+          squareService = new SquareService("test-token", true);
         } else {
-          squareClient = await getSquareClient(nango, connectionIdToUse!);
+          squareService = await getSquareService(nango, connectionIdToUse!);
         }
 
         // Fetch business data
-        const businessData = await fetchSquareBusinessData(squareClient);
+        const businessData = await fetchSquareBusinessData(squareService);
 
         // Store the data
         await storeBusinessData(supabaseClient, userId, businessData);
@@ -521,7 +435,7 @@ Deno.serve(async (req: Request) => {
           `Failed to fetch business data: ${
             error instanceof Error ? error.message : "Unknown error"
           }`,
-          500
+          500,
         );
       }
     }
@@ -529,12 +443,8 @@ Deno.serve(async (req: Request) => {
     if (action === "test_data") {
       // Test endpoint that returns mock data without storing
       try {
-        const mockClient = new SquareClient({
-          token: "test-token",
-          environment: SquareEnvironment.Sandbox,
-        });
-
-        const businessData = await fetchSquareBusinessData(mockClient);
+        const mockService = new SquareService("test-token", true);
+        const businessData = await fetchSquareBusinessData(mockService);
 
         return createSuccessResponse({
           success: true,
@@ -548,7 +458,7 @@ Deno.serve(async (req: Request) => {
           `Failed to generate test data: ${
             error instanceof Error ? error.message : "Unknown error"
           }`,
-          500
+          500,
         );
       }
     }
@@ -557,8 +467,9 @@ Deno.serve(async (req: Request) => {
   } catch (error: unknown) {
     console.error("Error in square-service function:", error);
 
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error occurred";
+    const errorMessage = error instanceof Error
+      ? error.message
+      : "Unknown error occurred";
     return new Response(
       JSON.stringify({
         error: "Internal server error",
@@ -567,7 +478,7 @@ Deno.serve(async (req: Request) => {
       {
         status: 500,
         headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-      }
+      },
     );
   }
 });
