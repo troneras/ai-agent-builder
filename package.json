@@ -17,6 +17,7 @@
     "test:square:live": "node test-square-api.js --live"
   },
   "dependencies": {
+    "@elevenlabs/react": "^0.1.7",
     "@nangohq/frontend": "^0.61.2",
     "@supabase/supabase-js": "^2.39.0",
     "lucide-react": "^0.344.0",

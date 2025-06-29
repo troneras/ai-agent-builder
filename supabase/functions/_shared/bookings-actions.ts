@@ -21,12 +21,10 @@ export interface BookingCreateRequest {
   merchantId: string;
   selectedTime: string; // ISO 8601 timestamp
   locationId: string;
-  customerInfo: {
-    firstName: string;
-    lastName: string;
-    email?: string;
-    phone?: string;
-  };
+  firstName: string;
+  lastName: string;
+  email?: string;
+  phone?: string;
   teamMemberId?: string;
   notes?: string;
 }
@@ -212,7 +210,7 @@ export class SquareBookingsActions {
           ],
           customerNote: request.notes,
           sellerNote:
-            `Booking created for ${request.customerInfo.firstName} ${request.customerInfo.lastName}`,
+            `Booking created for ${request.firstName} ${request.lastName}`,
         },
       };
 
@@ -237,8 +235,7 @@ export class SquareBookingsActions {
         serviceName: service.name,
         teamMemberName: "Staff Member", // Would be fetched from team API in real implementation
         locationName: location?.name || "Main Location",
-        customerName:
-          `${request.customerInfo.firstName} ${request.customerInfo.lastName}`,
+        customerName: `${request.firstName} ${request.lastName}`,
         status: booking.status || "CONFIRMED",
         confirmationDetails: {
           bookingId: booking.id || "",
@@ -251,10 +248,9 @@ export class SquareBookingsActions {
           location: location?.name || "Main Location",
           teamMember: "Staff Member",
           customerInfo: {
-            name:
-              `${request.customerInfo.firstName} ${request.customerInfo.lastName}`,
-            email: request.customerInfo.email,
-            phone: request.customerInfo.phone,
+            name: `${request.firstName} ${request.lastName}`,
+            email: request.email,
+            phone: request.phone,
           },
         },
       };
