@@ -253,7 +253,12 @@ class ImportProcessor {
   }
 
   private async getSquareService(connectionId: string): Promise<SquareService> {
-    // Get connection credentials from Nango
+    // For this method, we need to get the user_id from the connection_id
+    // Since we already have the connection_id, we can get the connection info directly
+    // But to use the shared utility, we need the user_id
+    // For now, let's keep the original implementation but we could refactor this later
+    // to either pass user_id or create a variant of the utility that works with connection_id
+
     const connectionInfo = await this.nangoService.getConnection(
       getSquareProviderConfigKey(),
       connectionId,

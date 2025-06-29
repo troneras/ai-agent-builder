@@ -1,0 +1,9 @@
+{
+  "imports": {
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2",
+    "@nangohq/node": "npm:@nangohq/node",
+    "@square/web-sdk": "npm:@square/web-sdk",
+    "square": "npm:square@42.3.0",
+    "supabase": "npm:@supabase/supabase-js@2"
+  }
+}

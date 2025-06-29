@@ -12,6 +12,7 @@ import {
     LogOut
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { supabase } from '../lib/supabase';
 import Logo from './Logo';
 
 interface AgentTestScreenProps {
@@ -28,6 +29,8 @@ interface ChatMessage {
     rawData?: { message: string; source: string };
 }
 
+
+
 const AgentTestScreen: React.FC<AgentTestScreenProps> = ({
     onGoToDashboard,
     onSignOut
@@ -42,16 +45,156 @@ const AgentTestScreen: React.FC<AgentTestScreenProps> = ({
     const conversation = useConversation({
         clientTools: {
             get_customer_info: async () => {
-                return "Hello, how are you?";
+                addMessage('system', `👤 Retrieving customer information...`);
+                addMessage('system', `✅ Customer info retrieved successfully`);
+                return JSON.stringify({
+                    success: true,
+                    data: {
+                        message: "Hello, how are you?",
+                        customerStatus: "active"
+                    },
+                    action: "get_customer_info"
+                });
             },
-            findAvailableTimesForService: async ({ serviceName, startDate, endDate, merchantId }) => {
-                console.log("findAvailableTimesForService", serviceName, startDate, endDate, merchantId);
+            findAvailableTimesForService: async ({ serviceId, variationId, startDate, endDate, merchantId, locationId, preferredTeamMemberId }) => {
+                console.log("findAvailableTimesForService", serviceId, variationId, startDate, endDate, merchantId);
 
-                return "Currently no appointments available";
+                // Add message to show function is being called
+                addMessage('system', `🔍 Searching for available appointment times from ${startDate} to ${endDate}...`);
+
+                try {
+                    const { data, error } = await supabase.functions.invoke('booking', {
+                        body: {
+                            action: 'findAvailableTimesForService',
+                            serviceId,
+                            variationId,
+                            merchantId,
+                            startDate,
+                            endDate,
+                            locationId,
+                            preferredTeamMemberId,
+                        },
+                    });
+
+                    if (error) {
+                        addMessage('system', `❌ Error searching for appointments: ${error.message}`);
+                        throw new Error(error.message || 'Failed to find available times');
+                    }
+
+                    const availableTimes = data?.data;
+                    if (!availableTimes || availableTimes.length === 0) {
+                        addMessage('system', `📅 No appointments found for the selected dates (${startDate} to ${endDate})`);
+                        return JSON.stringify({
+                            success: false,
+                            message: "No appointments available for the selected dates. Please try different dates.",
+                            data: []
+                        });
+                    }
+
+                    addMessage('system', `✅ Found ${availableTimes.length} available appointment slots`);
+
+                    // Return the complete data structure for the agent
+                    const response = {
+                        success: true,
+                        data: availableTimes,
+                        action: "findAvailableTimesForService",
+                        message: `Found ${availableTimes.length} available appointment slots from ${startDate} to ${endDate}`
+                    };
+
+                    console.log("response", response);
+                    return JSON.stringify(response);
+
+                } catch (error) {
+                    console.error('Error finding available times:', error);
+                    addMessage('system', `❌ Function call failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                    return JSON.stringify({
+                        success: false,
+                        message: `Error searching for available times: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                        data: [],
+                        action: "findAvailableTimesForService"
+                    });
+                }
             },
-            bookAppointment: async ({ serviceName, merchantId, locationId, firstName, lastName, selectedTime, notes }) => {
-                console.log("bookAppointment", serviceName, merchantId, locationId, firstName, lastName, selectedTime, notes);
-                return "Appointment booked successfully";
+            bookAppointment: async ({ serviceId, variationId, merchantId, locationId, firstName, lastName, selectedTime, notes, email, phone, teamMemberId }) => {
+                console.log("bookAppointment", serviceId, variationId, merchantId, locationId, firstName, lastName, selectedTime, notes);
+
+                // Add message to show booking is being processed
+                const appointmentTime = new Date(selectedTime).toLocaleString('en-US', {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                });
+                addMessage('system', `📅 Booking appointment for ${firstName} ${lastName} on ${appointmentTime}...`);
+
+                try {
+                    const { data, error } = await supabase.functions.invoke('booking', {
+                        body: {
+                            action: 'bookAppointment',
+                            serviceId,
+                            variationId,
+                            merchantId,
+                            locationId,
+                            firstName,
+                            lastName,
+                            selectedTime,
+                            notes,
+                            email,
+                            phone,
+                            teamMemberId,
+                        },
+                    });
+
+                    if (error) {
+                        addMessage('system', `❌ Booking failed: ${error.message}`);
+                        throw new Error(error.message || 'Failed to book appointment');
+                    }
+
+                    const booking = data?.data;
+                    if (!booking) {
+                        addMessage('system', `❌ Booking failed: No booking data received from server`);
+                        return JSON.stringify({
+                            success: false,
+                            message: "Booking failed: No booking data received from server",
+                            data: null
+                        });
+                    }
+
+                    const appointmentDate = new Date(booking.startTime);
+                    const dateString = appointmentDate.toLocaleString('en-US', {
+                        weekday: 'long',
+                        month: 'long',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true
+                    });
+
+                    addMessage('system', `✅ Appointment successfully booked! Confirmation ID: ${booking.bookingId}`);
+
+                    // Return the complete booking data structure for the agent
+                    const response = {
+                        success: true,
+                        data: booking,
+                        action: "bookAppointment",
+                        message: `Appointment successfully booked for ${firstName} ${lastName} on ${dateString}`,
+                        formattedDateTime: dateString
+                    };
+
+                    return JSON.stringify(response);
+
+                } catch (error) {
+                    console.error('Error booking appointment:', error);
+                    addMessage('system', `❌ Booking function failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                    return JSON.stringify({
+                        success: false,
+                        message: `Error booking appointment: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again or contact support.`,
+                        data: null,
+                        action: "bookAppointment"
+                    });
+                }
             },
         },
         onConnect: () => {

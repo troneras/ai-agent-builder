@@ -8,7 +8,8 @@ import { MerchantDataService } from "./merchant-service.ts";
 import { SupabaseClient } from "@supabase/supabase-js";
 
 export interface BookingSearchRequest {
-  serviceName: string;
+  serviceId: string;
+  variationId: string;
   merchantId: string;
   startDate: string; // YYYY-MM-DD format
   endDate: string; // YYYY-MM-DD format
@@ -17,7 +18,8 @@ export interface BookingSearchRequest {
 }
 
 export interface BookingCreateRequest {
-  serviceName: string;
+  serviceId: string;
+  variationId: string;
   merchantId: string;
   selectedTime: string; // ISO 8601 timestamp
   locationId: string;
@@ -89,27 +91,6 @@ export class SquareBookingsActions {
     request: BookingSearchRequest,
   ): Promise<AvailableTimeSlot[]> {
     try {
-      // Get service from stored merchant data
-      const service = await this.merchantService.findServiceByName(
-        this.userId,
-        request.serviceName,
-      );
-
-      if (!service) {
-        throw new Error(`Service "${request.serviceName}" not found`);
-      }
-
-      // Get the first bookable variation
-      const bookableVariation = service.variations?.find(
-        (variation) => variation.is_bookable === true,
-      );
-
-      if (!bookableVariation) {
-        throw new Error(
-          `No bookable variations found for service "${request.serviceName}"`,
-        );
-      }
-
       // Use specified location or get primary location
       let locationId = request.locationId;
       if (!locationId) {
@@ -134,7 +115,7 @@ export class SquareBookingsActions {
         locationId,
         segmentFilters: [
           {
-            serviceVariationId: bookableVariation.id,
+            serviceVariationId: request.variationId,
             ...(request.preferredTeamMemberId && {
               teamMemberIdFilter: {
                 // any: [request.preferredTeamMemberId],
@@ -150,10 +131,10 @@ export class SquareBookingsActions {
         searchRequest,
       );
 
-      // Convert to time slots
+      // Convert to time slots - use default duration of 60 minutes since we don't have service details
       return this.convertAvailabilitiesToTimeSlots(
         availabilities,
-        bookableVariation.duration_minutes || 60,
+        60, // Default duration
       );
     } catch (error) {
       console.error("Error finding available times:", error);
@@ -172,27 +153,6 @@ export class SquareBookingsActions {
     request: BookingCreateRequest,
   ): Promise<BookingResult> {
     try {
-      // Get service from stored merchant data
-      const service = await this.merchantService.findServiceByName(
-        this.userId,
-        request.serviceName,
-      );
-
-      if (!service) {
-        throw new Error(`Service "${request.serviceName}" not found`);
-      }
-
-      // Get the first bookable variation
-      const bookableVariation = service.variations?.find(
-        (variation) => variation.is_bookable === true,
-      );
-
-      if (!bookableVariation) {
-        throw new Error(
-          `No bookable variations found for service "${request.serviceName}"`,
-        );
-      }
-
       // Use a default team member if not specified (this would need to be fetched from team API in real implementation)
       const teamMemberId = request.teamMemberId || "TME9AA7n6dOcqI_S"; // TODO: Just for the demo
 
@@ -203,8 +163,8 @@ export class SquareBookingsActions {
           locationId: request.locationId,
           appointmentSegments: [
             {
-              durationMinutes: bookableVariation.duration_minutes || 60,
-              serviceVariationId: bookableVariation.id,
+              durationMinutes: 60, // Default duration since we don't have variation details
+              serviceVariationId: request.variationId,
               teamMemberId: teamMemberId,
             },
           ],
@@ -232,7 +192,7 @@ export class SquareBookingsActions {
         bookingId: booking.id || "",
         orderNumber: undefined, // Not available in simplified booking interface
         startTime: booking.startAt || request.selectedTime,
-        serviceName: service.name,
+        serviceName: "Service", // Service name not available with direct ID approach
         teamMemberName: "Staff Member", // Would be fetched from team API in real implementation
         locationName: location?.name || "Main Location",
         customerName: `${request.firstName} ${request.lastName}`,
@@ -242,9 +202,9 @@ export class SquareBookingsActions {
           startTime: booking.startAt || request.selectedTime,
           endTime: this.calculateEndTime(
             booking.startAt || request.selectedTime,
-            bookableVariation.duration_minutes || 60,
+            60, // Default duration
           ),
-          service: service.name,
+          service: "Service", // Service name not available with direct ID approach
           location: location?.name || "Main Location",
           teamMember: "Staff Member",
           customerInfo: {
@@ -270,7 +230,8 @@ export class SquareBookingsActions {
    * Get available dates for a service within a date range
    */
   async getAvailableDatesForService(
-    serviceName: string,
+    serviceId: string,
+    variationId: string,
     merchantId: string,
     startDate: string,
     endDate: string,
@@ -278,7 +239,8 @@ export class SquareBookingsActions {
   ): Promise<string[]> {
     try {
       const availableSlots = await this.findAvailableTimesForService({
-        serviceName,
+        serviceId,
+        variationId,
         merchantId,
         startDate,
         endDate,
@@ -307,13 +269,15 @@ export class SquareBookingsActions {
    * Get available time slots for a specific date
    */
   async getAvailableTimesForDate(
-    serviceName: string,
+    serviceId: string,
+    variationId: string,
     merchantId: string,
     date: string, // YYYY-MM-DD
     locationId?: string,
   ): Promise<AvailableTimeSlot[]> {
     return this.findAvailableTimesForService({
-      serviceName,
+      serviceId,
+      variationId,
       merchantId,
       startDate: date,
       endDate: date,
@@ -396,7 +360,8 @@ export class SquareBookingsActions {
    * Get the next available appointment slot
    */
   async getNextAvailableSlot(
-    serviceName: string,
+    serviceId: string,
+    variationId: string,
     merchantId: string,
     locationId?: string,
   ): Promise<AvailableTimeSlot | null> {
@@ -408,7 +373,8 @@ export class SquareBookingsActions {
       const endDate = nextWeek.toISOString().split("T")[0];
 
       const availableSlots = await this.findAvailableTimesForService({
-        serviceName,
+        serviceId,
+        variationId,
         merchantId,
         startDate,
         endDate,
