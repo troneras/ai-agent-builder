@@ -353,6 +353,9 @@ class ImportProcessor {
           }
           break;
         case "locations":
+          if (data.location_id) {
+            updates.primary_location_id = data.location_id;
+          }
           if (data.phone_number) {
             updates.phone_number = data.phone_number;
           }

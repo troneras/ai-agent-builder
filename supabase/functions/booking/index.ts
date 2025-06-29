@@ -25,6 +25,7 @@ interface BookAppointmentRequest {
   action: "bookAppointment";
   serviceId: string;
   variationId: string;
+  serviceVariationVersion: number;
   merchantId: string;
   selectedTime: string; // ISO 8601 timestamp
   locationId: string;
@@ -122,6 +123,7 @@ Deno.serve(async (req) => {
         result = await bookingsActions.bookAppointment({
           serviceId: requestData.serviceId,
           variationId: requestData.variationId,
+          serviceVariationVersion: requestData.serviceVariationVersion,
           merchantId: requestData.merchantId,
           selectedTime: requestData.selectedTime,
           locationId: requestData.locationId,

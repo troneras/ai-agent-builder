@@ -125,7 +125,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut, onGoT
           caller_name: 'Sarah Johnson',
           duration: 180,
           status: 'answered',
-          summary: 'Customer called to book a haircut appointment for next Tuesday at 2 PM. Confirmed availability and sent confirmation text.',
+          summary: 'Customer called to book a haircut and blowout appointment for next Tuesday at 2 PM. Confirmed availability and sent confirmation text.',
           appointment_booked: true,
           created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
           recording_url: '#'
@@ -133,10 +133,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut, onGoT
         {
           id: '2',
           caller_number: '+1 (555) 987-6543',
-          caller_name: 'Mike Thompson',
+          caller_name: 'Emma Rodriguez',
           duration: 95,
           status: 'answered',
-          summary: 'Customer inquired about pricing for plumbing services. Provided quote for kitchen sink repair.',
+          summary: 'Customer inquired about pricing for balayage highlights and deep conditioning treatment. Provided quote and available time slots.',
           appointment_booked: false,
           created_at: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
           recording_url: '#'
@@ -144,9 +144,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut, onGoT
         {
           id: '3',
           caller_number: '+1 (555) 456-7890',
+          caller_name: 'Jessica Martinez',
           duration: 0,
           status: 'missed',
-          summary: 'Missed call - customer hung up before assistant could answer. No voicemail left.',
+          summary: 'Missed call - customer hung up before assistant could answer. Likely calling about hair coloring services.',
           appointment_booked: false,
           created_at: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString()
         },
@@ -156,7 +157,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut, onGoT
           caller_name: 'Lisa Chen',
           duration: 240,
           status: 'answered',
-          summary: 'Customer rescheduled existing appointment from Thursday to Friday. Updated calendar and sent new confirmation.',
+          summary: 'Customer rescheduled her keratin treatment from Thursday to Friday. Updated calendar and sent new confirmation with prep instructions.',
           appointment_booked: true,
           created_at: new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString(),
           recording_url: '#'
@@ -164,10 +165,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut, onGoT
         {
           id: '5',
           caller_number: '+1 (555) 654-3210',
-          caller_name: 'David Rodriguez',
+          caller_name: 'Amanda Williams',
           duration: 320,
           status: 'answered',
-          summary: 'New customer inquiry about landscaping services. Scheduled consultation for next week and collected contact information.',
+          summary: 'New customer inquiry about wedding hair styling packages. Scheduled consultation for next week and collected bridal party details.',
           appointment_booked: true,
           created_at: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
           recording_url: '#'
@@ -304,16 +305,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut, onGoT
             </div>
 
             <div className="flex items-center gap-4">
-              {getSubscriptionBadge()}
-
-              <button
-                onClick={onGoToAgentTest}
-                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg hover:from-purple-600 hover:to-blue-600 transition-all transform hover:scale-105 font-semibold shadow-lg"
-                title="Test your AI agent"
-              >
-                <Phone className="w-4 h-4" />
-                <span>Test Agent</span>
-              </button>
+              <div className="flex items-center gap-2 bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-sm font-medium">
+                <AlertCircle className="w-4 h-4" />
+                Sample Data
+              </div>
 
               <button
                 onClick={onBackToLanding}
@@ -372,6 +367,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut, onGoT
                 >
                   <Phone className="w-5 h-5" />
                   Call History
+                </button>
+
+                <button
+                  onClick={onGoToAgentTest}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-gray-600 hover:bg-gray-100 transition-colors"
+                >
+                  <Zap className="w-5 h-5" />
+                  Test Agent
                 </button>
 
                 <button
@@ -437,7 +440,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut, onGoT
                         className="flex items-center gap-2 px-6 py-3 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white rounded-lg transition-all transform hover:scale-105 font-semibold border border-white/30"
                       >
                         <Phone className="w-5 h-5" />
-                        Test Your AI Agent
+                        Configure Your Phone Number
                       </button>
                     </div>
                     <div className="text-right">

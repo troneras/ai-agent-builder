@@ -20,6 +20,7 @@ export interface BookingSearchRequest {
 export interface BookingCreateRequest {
   serviceId: string;
   variationId: string;
+  serviceVariationVersion: number;
   merchantId: string;
   selectedTime: string; // ISO 8601 timestamp
   locationId: string;
@@ -165,6 +166,7 @@ export class SquareBookingsActions {
             {
               durationMinutes: 60, // Default duration since we don't have variation details
               serviceVariationId: request.variationId,
+              serviceVariationVersion: BigInt(request.serviceVariationVersion),
               teamMemberId: teamMemberId,
             },
           ],

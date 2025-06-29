@@ -29,8 +29,6 @@ interface ChatMessage {
     rawData?: { message: string; source: string };
 }
 
-
-
 const AgentTestScreen: React.FC<AgentTestScreenProps> = ({
     onGoToDashboard,
     onSignOut
@@ -115,8 +113,8 @@ const AgentTestScreen: React.FC<AgentTestScreenProps> = ({
                     });
                 }
             },
-            bookAppointment: async ({ serviceId, variationId, merchantId, locationId, firstName, lastName, selectedTime, notes, email, phone, teamMemberId }) => {
-                console.log("bookAppointment", serviceId, variationId, merchantId, locationId, firstName, lastName, selectedTime, notes);
+            bookAppointment: async ({ serviceId, variationId, serviceVariationVersion, merchantId, locationId, firstName, lastName, selectedTime, notes, email, phone, teamMemberId }) => {
+                console.log("bookAppointment", serviceId, variationId, serviceVariationVersion, merchantId, locationId, firstName, lastName, selectedTime, notes);
 
                 // Add message to show booking is being processed
                 const appointmentTime = new Date(selectedTime).toLocaleString('en-US', {
@@ -135,6 +133,7 @@ const AgentTestScreen: React.FC<AgentTestScreenProps> = ({
                             action: 'bookAppointment',
                             serviceId,
                             variationId,
+                            serviceVariationVersion,
                             merchantId,
                             locationId,
                             firstName,
@@ -174,16 +173,9 @@ const AgentTestScreen: React.FC<AgentTestScreenProps> = ({
 
                     addMessage('system', `✅ Appointment successfully booked! Confirmation ID: ${booking.bookingId}`);
 
-                    // Return the complete booking data structure for the agent
-                    const response = {
-                        success: true,
-                        data: booking,
-                        action: "bookAppointment",
-                        message: `Appointment successfully booked for ${firstName} ${lastName} on ${dateString}`,
-                        formattedDateTime: dateString
-                    };
-
-                    return JSON.stringify(response);
+                    const response = `Appointment successfully booked for ${firstName} ${lastName} on ${dateString}`;
+                    console.log("response", response);
+                    return response;
 
                 } catch (error) {
                     console.error('Error booking appointment:', error);
@@ -310,6 +302,42 @@ const AgentTestScreen: React.FC<AgentTestScreenProps> = ({
         }
     };
 
+    // Speaking Wave Component
+    const SpeakingWave = () => {
+        // Create unique wave heights for each bar
+        const waveHeights = [12, 20, 16, 24, 18, 22, 14];
+
+        return (
+            <div className="flex items-center justify-center gap-1 p-2">
+                <style>
+                    {`
+                        @keyframes wave-bounce {
+                            0%, 100% { transform: scaleY(0.4); }
+                            25% { transform: scaleY(1.2); }
+                            50% { transform: scaleY(0.8); }
+                            75% { transform: scaleY(1.0); }
+                        }
+                        .wave-bar {
+                            animation: wave-bounce 1.2s ease-in-out infinite;
+                            transform-origin: bottom;
+                        }
+                    `}
+                </style>
+                {waveHeights.map((height, i) => (
+                    <div
+                        key={i}
+                        className="wave-bar bg-gradient-to-t from-green-400 to-green-200 rounded-full shadow-sm"
+                        style={{
+                            width: '3px',
+                            height: `${height}px`,
+                            animationDelay: `${i * 0.12}s`,
+                        }}
+                    />
+                ))}
+            </div>
+        );
+    };
+
     return (
         <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600">
             {/* Header */}
@@ -372,26 +400,9 @@ const AgentTestScreen: React.FC<AgentTestScreenProps> = ({
                         <div className="glass-morphism rounded-2xl p-6 sticky top-8">
                             <h3 className="text-xl font-semibold text-white mb-6">Agent Configuration</h3>
 
-                            {/* Agent ID Display */}
-                            <div className="mb-6">
-                                <label className="block text-white/80 text-sm font-medium mb-2">
-                                    ElevenLabs Agent ID
-                                </label>
-                                <div className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white/70">
-                                    {agentId ? (
-                                        <span className="font-mono text-sm">{agentId}</span>
-                                    ) : (
-                                        <span className="text-white/50">Not configured - set VITE_ELEVENLABS_AGENT_ID</span>
-                                    )}
-                                </div>
-                                <p className="text-white/60 text-xs mt-2">
-                                    Configure via environment variable
-                                </p>
-                            </div>
-
                             {/* Status */}
                             <div className="mb-6">
-                                <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center justify-between mb-4">
                                     <span className="text-white/80 text-sm font-medium">Status:</span>
                                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor()}`}>
                                         {getStatusText()}
@@ -399,9 +410,20 @@ const AgentTestScreen: React.FC<AgentTestScreenProps> = ({
                                 </div>
 
                                 {conversation.status === 'connected' && (
-                                    <div className="flex items-center gap-2 text-white/80 text-sm">
-                                        <div className={`w-2 h-2 rounded-full ${conversation.isSpeaking ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'}`}></div>
-                                        Agent is {conversation.isSpeaking ? 'speaking' : 'listening'}
+                                    <div className="bg-white/10 rounded-lg p-4 text-center">
+                                        {conversation.isSpeaking ? (
+                                            <div>
+                                                <div className="text-white/90 text-sm font-medium mb-3">
+                                                    🎙️ Agent is speaking
+                                                </div>
+                                                <SpeakingWave />
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center justify-center gap-2 text-white/80 text-sm">
+                                                <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></div>
+                                                Listening for your voice...
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -437,11 +459,11 @@ const AgentTestScreen: React.FC<AgentTestScreenProps> = ({
                             <div className="mt-6 p-4 bg-white/10 rounded-lg">
                                 <h4 className="text-white font-medium mb-2">How to test:</h4>
                                 <ol className="text-white/80 text-sm space-y-1 list-decimal list-inside">
-                                    <li>Ensure your Agent ID is configured in environment</li>
-                                    <li>Click "Start Conversation"</li>
+                                    <li>Click "Start Conversation" to begin</li>
                                     <li>Allow microphone access when prompted</li>
                                     <li>Speak naturally to test your agent</li>
-                                    <li>Monitor the chat for responses and interactions</li>
+                                    <li>Watch for the speaking wave when agent responds</li>
+                                    <li>Monitor the chat for live interactions</li>
                                 </ol>
                             </div>
                         </div>

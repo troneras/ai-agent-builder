@@ -80,6 +80,7 @@ CREATE TABLE onboarding (
   contact_email text,
   website text,
   opening_hours text,
+  primary_location_id text,
   catalog_data jsonb,
   ai_use_cases text[],
   started_at timestamptz DEFAULT now(),

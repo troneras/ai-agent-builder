@@ -57,6 +57,7 @@ export interface CreateBookingRequest {
       durationMinutes: number;
       serviceVariationId: string;
       teamMemberId: string;
+      serviceVariationVersion: bigint;
     }>;
     customerId?: string;
     customerNote?: string;
@@ -146,11 +147,12 @@ export class SquareAppointmentsService {
               durationMinutes: segment.durationMinutes,
               serviceVariationId: segment.serviceVariationId,
               teamMemberId: segment.teamMemberId,
+              serviceVariationVersion: segment.serviceVariationVersion,
             }),
           ),
-          customerId: request.booking.customerId,
+          customerId: "1Y64WWRH7HZ46JR4QP4C99ZQYR", //request.booking.customerId,
           customerNote: request.booking.customerNote,
-          sellerNote: request.booking.sellerNote,
+          // sellerNote: request.booking.sellerNote,
         },
       });
 

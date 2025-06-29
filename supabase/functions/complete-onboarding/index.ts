@@ -22,6 +22,7 @@ interface OnboardingRecord {
   business_city?: string;
   full_address?: string;
   opening_hours?: string;
+  primary_location_id?: string;
   catalog_data?: any; // This contains the enhanced catalog data from Square
   current_step: number;
   completed: boolean;
@@ -165,7 +166,7 @@ function transformOnboardingToSquareBusinessInfo(
     const addressParts = onboarding.full_address?.split(", ") || [];
 
     const location = {
-      id: "primary_location", // We'll use a default ID since we don't store the Square location ID
+      id: onboarding.primary_location_id || "primary_location", // Use the actual Square location ID
       name: onboarding.business_name || "Primary Location",
       address: {
         addressLine1: addressParts[0] || undefined,
