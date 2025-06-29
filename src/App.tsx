@@ -12,13 +12,14 @@ import Dashboard from './components/Dashboard';
 import SquareConnectionPage from './components/SquareConnectionPage';
 import BusinessImportScreen from './components/BusinessImportScreen';
 import BusinessInfoScreen from './components/BusinessInfoScreen';
+import AgentTestScreen from './components/AgentTestScreen';
 import ParticleBackground from './components/ParticleBackground';
 import { useAuth } from './hooks/useAuth';
 import { useUserProfile } from './hooks/useUserProfile';
 import { useOnboarding } from './hooks/useOnboarding';
 import { authHelpers, supabase } from './lib/supabase';
 
-type AppView = 'landing' | 'dashboard' | 'square-connection' | 'business-import' | 'business-info';
+type AppView = 'landing' | 'dashboard' | 'square-connection' | 'business-import' | 'business-info' | 'agent-test';
 
 function App() {
   const [showAuth, setShowAuth] = useState(false);
@@ -200,8 +201,8 @@ function App() {
 
       console.log('Onboarding completed successfully');
 
-      // Go to dashboard
-      setCurrentView('dashboard');
+      // Go to agent test screen instead of dashboard
+      setCurrentView('agent-test');
     } catch (error) {
       console.error('Error during onboarding completion:', error);
       alert('Failed to complete setup. Please try again.');
@@ -246,6 +247,14 @@ function App() {
     setCurrentView('landing');
   };
 
+  const handleGoToDashboard = () => {
+    setCurrentView('dashboard');
+  };
+
+  const handleGoToAgentTest = () => {
+    setCurrentView('agent-test');
+  };
+
   const handleSignOut = async () => {
     await authHelpers.signOut();
     setSquareConnectionId(null);
@@ -263,7 +272,11 @@ function App() {
 
   // Render based on current view
   if (currentView === 'dashboard') {
-    return <Dashboard onBackToLanding={handleBackToLanding} onSignOut={handleSignOut} />;
+    return <Dashboard onBackToLanding={handleBackToLanding} onSignOut={handleSignOut} onGoToAgentTest={handleGoToAgentTest} />;
+  }
+
+  if (currentView === 'agent-test') {
+    return <AgentTestScreen onGoToDashboard={handleGoToDashboard} onSignOut={handleSignOut} />;
   }
 
   if (currentView === 'square-connection') {

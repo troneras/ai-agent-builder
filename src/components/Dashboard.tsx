@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Phone, 
-  Calendar, 
-  MessageSquare, 
-  Settings, 
-  BarChart3, 
-  Clock, 
-  User, 
-  Building, 
-  MapPin, 
+import {
+  Phone,
+  Calendar,
+  MessageSquare,
+  Settings,
+  BarChart3,
+  Clock,
+  User,
+  Building,
+  MapPin,
   Mail,
   Edit3,
   Save,
@@ -41,6 +41,7 @@ import Logo from './Logo';
 interface DashboardProps {
   onBackToLanding: () => void;
   onSignOut: () => void;
+  onGoToAgentTest: () => void;
 }
 
 interface CallRecord {
@@ -64,7 +65,7 @@ interface BusinessStats {
   customer_satisfaction: number;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => {
+const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut, onGoToAgentTest }) => {
   const { user } = useAuth();
   const { profile, updateProfile } = useUserProfile(user);
   const { onboarding } = useOnboarding(user);
@@ -111,11 +112,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => 
 
     try {
       setLoading(true);
-      
+
       // Simulate loading call data and stats
       // In a real app, this would fetch from your backend
       await new Promise(resolve => setTimeout(resolve, 1000));
-      
+
       // Mock data for demonstration
       const mockCalls: CallRecord[] = [
         {
@@ -223,7 +224,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => 
     const date = new Date(dateString);
     const now = new Date();
     const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
-    
+
     if (diffInHours < 1) return 'Just now';
     if (diffInHours < 24) return `${diffInHours}h ago`;
     return `${Math.floor(diffInHours / 24)}d ago`;
@@ -233,11 +234,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => 
     if (!profile) return null;
 
     const { subscription_status, subscription_plan, trial_ends_at } = profile;
-    
+
     if (subscription_status === 'trial') {
       const trialEnd = trial_ends_at ? new Date(trial_ends_at) : null;
       const daysLeft = trialEnd ? Math.ceil((trialEnd.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) : 0;
-      
+
       return (
         <div className="flex items-center gap-2 bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-sm font-medium">
           <Clock className="w-4 h-4" />
@@ -265,12 +266,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => 
   };
 
   const filteredCalls = calls.filter(call => {
-    const matchesFilter = callFilter === 'all' || 
+    const matchesFilter = callFilter === 'all' ||
       (callFilter === 'answered' && call.status === 'answered') ||
       (callFilter === 'missed' && call.status === 'missed') ||
       (callFilter === 'appointments' && call.appointment_booked);
-    
-    const matchesSearch = searchTerm === '' || 
+
+    const matchesSearch = searchTerm === '' ||
       call.caller_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       call.caller_number.includes(searchTerm) ||
       call.summary.toLowerCase().includes(searchTerm.toLowerCase());
@@ -304,7 +305,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => 
 
             <div className="flex items-center gap-4">
               {getSubscriptionBadge()}
-              
+
+              <button
+                onClick={onGoToAgentTest}
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg hover:from-purple-600 hover:to-blue-600 transition-all transform hover:scale-105 font-semibold shadow-lg"
+                title="Test your AI agent"
+              >
+                <Phone className="w-4 h-4" />
+                <span>Test Agent</span>
+              </button>
+
               <button
                 onClick={onBackToLanding}
                 className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
@@ -344,47 +354,43 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => 
               <nav className="space-y-2">
                 <button
                   onClick={() => setActiveTab('overview')}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${
-                    activeTab === 'overview' 
-                      ? 'bg-purple-100 text-purple-700' 
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${activeTab === 'overview'
+                    ? 'bg-purple-100 text-purple-700'
+                    : 'text-gray-600 hover:bg-gray-100'
+                    }`}
                 >
                   <BarChart3 className="w-5 h-5" />
                   Overview
                 </button>
-                
+
                 <button
                   onClick={() => setActiveTab('calls')}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${
-                    activeTab === 'calls' 
-                      ? 'bg-purple-100 text-purple-700' 
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${activeTab === 'calls'
+                    ? 'bg-purple-100 text-purple-700'
+                    : 'text-gray-600 hover:bg-gray-100'
+                    }`}
                 >
                   <Phone className="w-5 h-5" />
                   Call History
                 </button>
-                
+
                 <button
                   onClick={() => setActiveTab('settings')}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${
-                    activeTab === 'settings' 
-                      ? 'bg-purple-100 text-purple-700' 
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${activeTab === 'settings'
+                    ? 'bg-purple-100 text-purple-700'
+                    : 'text-gray-600 hover:bg-gray-100'
+                    }`}
                 >
                   <Settings className="w-5 h-5" />
                   Settings
                 </button>
-                
+
                 <button
                   onClick={() => setActiveTab('billing')}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${
-                    activeTab === 'billing' 
-                      ? 'bg-purple-100 text-purple-700' 
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${activeTab === 'billing'
+                    ? 'bg-purple-100 text-purple-700'
+                    : 'text-gray-600 hover:bg-gray-100'
+                    }`}
                 >
                   <Crown className="w-5 h-5" />
                   Billing
@@ -423,9 +429,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => 
                       <h2 className="text-2xl font-bold mb-2">
                         Welcome back, {profile?.full_name || 'there'}! 👋
                       </h2>
-                      <p className="text-purple-100">
+                      <p className="text-purple-100 mb-4">
                         Your phone assistant has been busy. Here's what's happening with your business.
                       </p>
+                      <button
+                        onClick={onGoToAgentTest}
+                        className="flex items-center gap-2 px-6 py-3 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white rounded-lg transition-all transform hover:scale-105 font-semibold border border-white/30"
+                      >
+                        <Phone className="w-5 h-5" />
+                        Test Your AI Agent
+                      </button>
                     </div>
                     <div className="text-right">
                       <div className="text-3xl font-bold">{stats.total_calls}</div>
@@ -499,14 +512,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => 
                       <div key={call.id} className="p-6 hover:bg-gray-50 transition-colors">
                         <div className="flex items-start justify-between">
                           <div className="flex items-start gap-4">
-                            <div className={`p-2 rounded-lg ${
-                              call.status === 'answered' ? 'bg-green-100' :
+                            <div className={`p-2 rounded-lg ${call.status === 'answered' ? 'bg-green-100' :
                               call.status === 'missed' ? 'bg-red-100' : 'bg-gray-100'
-                            }`}>
-                              <Phone className={`w-4 h-4 ${
-                                call.status === 'answered' ? 'text-green-600' :
+                              }`}>
+                              <Phone className={`w-4 h-4 ${call.status === 'answered' ? 'text-green-600' :
                                 call.status === 'missed' ? 'text-red-600' : 'text-gray-600'
-                              }`} />
+                                }`} />
                             </div>
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-1">
@@ -553,7 +564,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => 
                         className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                       />
                     </div>
-                    
+
                     <select
                       value={callFilter}
                       onChange={(e) => setCallFilter(e.target.value as any)}
@@ -582,16 +593,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => 
                       <div key={call.id} className="p-6 hover:bg-gray-50 transition-colors">
                         <div className="flex items-start justify-between">
                           <div className="flex items-start gap-4 flex-1">
-                            <div className={`p-3 rounded-lg ${
-                              call.status === 'answered' ? 'bg-green-100' :
+                            <div className={`p-3 rounded-lg ${call.status === 'answered' ? 'bg-green-100' :
                               call.status === 'missed' ? 'bg-red-100' : 'bg-gray-100'
-                            }`}>
-                              <Phone className={`w-5 h-5 ${
-                                call.status === 'answered' ? 'text-green-600' :
+                              }`}>
+                              <Phone className={`w-5 h-5 ${call.status === 'answered' ? 'text-green-600' :
                                 call.status === 'missed' ? 'text-red-600' : 'text-gray-600'
-                              }`} />
+                                }`} />
                             </div>
-                            
+
                             <div className="flex-1">
                               <div className="flex items-center gap-3 mb-2">
                                 <span className="font-semibold text-gray-900">
@@ -599,10 +608,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => 
                                 </span>
                                 <span className="text-gray-500">•</span>
                                 <span className="text-gray-600">{call.caller_number}</span>
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                  call.status === 'answered' ? 'bg-green-100 text-green-700' :
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${call.status === 'answered' ? 'bg-green-100 text-green-700' :
                                   call.status === 'missed' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'
-                                }`}>
+                                  }`}>
                                   {call.status.charAt(0).toUpperCase() + call.status.slice(1)}
                                 </span>
                                 {call.appointment_booked && (
@@ -611,9 +619,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => 
                                   </span>
                                 )}
                               </div>
-                              
+
                               <p className="text-gray-600 mb-3">{call.summary}</p>
-                              
+
                               <div className="flex items-center gap-4 text-sm text-gray-500">
                                 <span>{formatTimeAgo(call.created_at)}</span>
                                 {call.duration > 0 && (
@@ -625,7 +633,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => 
                               </div>
                             </div>
                           </div>
-                          
+
                           <div className="flex items-center gap-2">
                             {call.recording_url && (
                               <button
@@ -640,14 +648,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => 
                                 )}
                               </button>
                             )}
-                            
+
                             <button
                               className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
                               title="View details"
                             >
                               <Eye className="w-4 h-4" />
                             </button>
-                            
+
                             {call.recording_url && (
                               <button
                                 className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
@@ -700,7 +708,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => 
                       )}
                     </div>
                   </div>
-                  
+
                   <div className="p-6 space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
@@ -787,7 +795,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => 
                   <div className="p-6 border-b border-gray-200">
                     <h3 className="text-lg font-semibold text-gray-900">Assistant Settings</h3>
                   </div>
-                  
+
                   <div className="p-6 space-y-6">
                     <div className="flex items-center justify-between">
                       <div>
@@ -833,7 +841,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => 
                   <div className="p-6 border-b border-gray-200">
                     <h3 className="text-lg font-semibold text-gray-900">Current Plan</h3>
                   </div>
-                  
+
                   <div className="p-6">
                     <div className="flex items-center justify-between mb-6">
                       <div>
@@ -844,13 +852,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => 
                           {getSubscriptionBadge()}
                         </div>
                         <p className="text-gray-600">
-                          {profile?.subscription_status === 'trial' 
+                          {profile?.subscription_status === 'trial'
                             ? 'You are currently on a free trial'
                             : 'Your subscription is active'
                           }
                         </p>
                       </div>
-                      
+
                       <div className="text-right">
                         <div className="text-2xl font-bold text-gray-900">
                           {profile?.subscription_status === 'trial' ? '$0' : '$79'}
@@ -866,7 +874,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => 
                           <div>
                             <h5 className="font-medium text-orange-800">Trial Ending Soon</h5>
                             <p className="text-orange-700 text-sm">
-                              Your trial ends in {profile.trial_ends_at ? Math.ceil((new Date(profile.trial_ends_at).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) : 0} days. 
+                              Your trial ends in {profile.trial_ends_at ? Math.ceil((new Date(profile.trial_ends_at).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) : 0} days.
                               Upgrade to continue using your phone assistant.
                             </p>
                           </div>
@@ -885,20 +893,20 @@ const Dashboard: React.FC<DashboardProps> = ({ onBackToLanding, onSignOut }) => 
                   <div className="p-6 border-b border-gray-200">
                     <h3 className="text-lg font-semibold text-gray-900">Usage This Month</h3>
                   </div>
-                  
+
                   <div className="p-6 space-y-4">
                     <div className="flex items-center justify-between">
                       <span className="text-gray-600">Calls Handled</span>
                       <span className="font-medium">{stats.total_calls} / 500</span>
                     </div>
-                    
+
                     <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div 
-                        className="bg-purple-500 h-2 rounded-full" 
+                      <div
+                        className="bg-purple-500 h-2 rounded-full"
                         style={{ width: `${(stats.total_calls / 500) * 100}%` }}
                       ></div>
                     </div>
-                    
+
                     <div className="flex items-center justify-between text-sm text-gray-500">
                       <span>9.4% of monthly limit used</span>
                       <span>Resets in 18 days</span>
