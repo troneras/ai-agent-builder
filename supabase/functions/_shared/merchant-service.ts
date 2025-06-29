@@ -1,4 +1,4 @@
-import { SupabaseClient } from "@supabase/supabase-js";
+import { SupabaseClient } from "supabase";
 import { SquareBusinessInfo } from "./square-service.ts";
 
 export interface MerchantLocation {
@@ -438,10 +438,20 @@ export class MerchantDataService {
         name: service.name || "",
         description: service.descriptionPlaintext,
         is_bookable: service.isService || false,
+        category_id: service.categories?.[0]?.id,
+        category_name: service.categories?.[0]?.name,
+        // Set service-level duration and price from first variation if available
+        duration_minutes: service.variations?.[0]?.serviceDuration
+          ? Math.floor(service.variations[0].serviceDuration / 60000) // Convert milliseconds to minutes
+          : undefined,
+        price_amount: service.variations?.[0]?.priceMoney?.amount,
+        price_currency: service.variations?.[0]?.priceMoney?.currency,
         variations: service.variations?.map((variation) => ({
           id: variation.id,
           name: variation.name,
-          duration_minutes: variation.serviceDuration,
+          duration_minutes: variation.serviceDuration
+            ? Math.floor(variation.serviceDuration / 60000) // Convert milliseconds to minutes
+            : undefined,
           price_amount: variation.priceMoney?.amount,
           price_currency: variation.priceMoney?.currency,
           is_bookable: variation.availableForBooking || false,

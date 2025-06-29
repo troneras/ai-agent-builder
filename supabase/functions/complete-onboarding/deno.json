@@ -1,0 +1,6 @@
+{
+    "imports": {
+        "supabase": "npm:@supabase/supabase-js@2",
+        "square": "npm:square@42.3.0"
+    }
+}

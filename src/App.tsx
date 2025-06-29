@@ -180,21 +180,21 @@ function App() {
   };
 
   const handleBusinessInfoContinue = async () => {
-    // When user continues from business info, complete onboarding directly
+    // When user continues from business info, complete onboarding by storing data in merchant service format
     if (!user) return;
 
     try {
-      // Mark onboarding as completed
-      const { error } = await supabase
-        .from('onboarding')
-        .update({
-          completed: true,
-          current_step: 999, // Final step
-        })
-        .eq('user_id', user.id);
+      console.log('Starting onboarding completion process...');
+
+      // Call the complete-onboarding function to transform and store data
+      const { error } = await supabase.functions.invoke('complete-onboarding', {
+        body: {
+          userId: user.id
+        }
+      });
 
       if (error) {
-        console.error('Error completing onboarding:', error);
+        console.error('Error calling complete-onboarding function:', error);
         throw error;
       }
 
