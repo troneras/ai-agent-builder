@@ -67,6 +67,27 @@ const HeroSection: React.FC<HeroSectionProps> = ({ onStartBuilding }) => {
 
   return (
     <section className="min-h-screen flex items-center justify-center px-4 py-20 pt-32 relative overflow-hidden" role="banner">
+      {/* Bolt Hackathon Badge */}
+      <a
+        href="https://bolt.new/"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="fixed top-4 right-4 z-50 group"
+        aria-label="Bolt.new Hackathon Badge"
+        style={{
+          width: 'auto',
+          height: 'auto',
+        }}
+      >
+        <img
+          src="/bolt_hackaton.svg"
+          alt="Bolt.new Hackathon Badge"
+          className="w-24 h-24 md:w-32 md:h-32 rounded-full shadow-lg transition-transform group-hover:scale-110 group-hover:shadow-2xl"
+          style={{ objectFit: 'contain' }}
+        />
+        <span className="sr-only">This project was built for the Bolt.new hackathon</span>
+      </a>
+      {/* End Bolt Hackathon Badge */}
       <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-12 items-center">
         {/* Content */}
         <div className={`text-center lg:text-left transition-all duration-1000 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
